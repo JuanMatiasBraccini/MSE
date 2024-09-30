@@ -9,7 +9,7 @@ fn.copy.file=function(x,from,to)
   }
 }
 fn.get=function(parname,from) from[match(parname,rownames(from)),]$INIT
-fn.create.list=function(vec) sapply(vec,function(x) NULL)   #fn.create.list(vec=Scenarios$Scenario)
+fn.create.list=function(vec) sapply(vec,function(x) NULL)   
 fn.right.format=function(x,var)
 {
   return(x%>%
@@ -39,17 +39,66 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
                                    "A no var adj","estim male offset","MonteCarlo",".tiff",".csv"),
                                  collapse = '|'), negate = TRUE)
   
+  
   #2. Create OM and EM based on Assessment model
   scen_path_OM=paste(sp_path_OM,Scen$Scenario,sep='/')
-  if(!dir.exists(scen_path_OM)) dir.create(scen_path_OM)
+  fn.create.folder(scen_path_OM)
   scen_path_EM=paste(sp_path_EM,Scen$Scenario,sep='/')
-  if(!dir.exists(scen_path_EM)) dir.create(scen_path_EM)
+  fn.create.folder(scen_path_EM)
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_OM, recursive = TRUE)))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_EM, recursive = TRUE)))
   
-  
-  #3. Add changes in OM model structure for future projections
   fore.OM <- r4ss::SS_readforecast(file.path(scen_path_OM, "forecast.ss"),verbose = FALSE)
+  dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
+  control <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ctl"),verbose = FALSE)
+  
+  #3. Update OM when Scenario info for scenarios not tested during the Assessment 
+  if(!is.na(Scen$Difference))
+  {
+    if(Scen$Difference=='NSF.logis.sel')
+    {
+      control$size_selex_types[match('Northern.shark',row.names(control$size_selex_types)),'Pattern']=1
+      id=match(c("SizeSel_P_3_Northern.shark(1)","SizeSel_P_4_Northern.shark(1)",
+                 "SizeSel_P_5_Northern.shark(1)","SizeSel_P_6_Northern.shark(1)"),
+               row.names(control$size_selex_parms))
+      control$size_selex_parms=control$size_selex_parms[-id,]
+      id=match('SizeSel_P_1_Northern.shark(1)',row.names(control$size_selex_parms))
+      aaa=control$MG_parms[match('Mat50%_Fem_GP_1',row.names(control$MG_parms)),'INIT']
+      control$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(aaa*.8,aaa*1.2,aaa,aaa)
+      id=match('SizeSel_P_2_Northern.shark(1)',row.names(control$size_selex_parms))
+      control$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(1,20,10,10)
+    }
+    if(Scen$Difference=='lower.steepness')
+    {
+      control$SR_parms[match('SR_BH_steep',row.names(control$SR_parms)),'INIT']=Scen$Difference.value
+    }
+    if(Scen$Difference=='rep.cycle')
+    {
+      control$MG_parms[match('Eggs_alpha_Fem_GP_1',row.names(control$MG_parms)),'INIT']=
+                control$MG_parms[match('Eggs_alpha_Fem_GP_1',row.names(control$MG_parms)),'INIT']*Scen$Difference.value
+      control$MG_parms[match('Eggs_beta_Fem_GP_1',row.names(control$MG_parms)),'INIT']=
+                control$MG_parms[match('Eggs_beta_Fem_GP_1',row.names(control$MG_parms)),'INIT']*Scen$Difference.value
+
+    }
+    if(Scen$Difference=='IUU')
+    {
+      id=match('Other',dat$fleetinfo$fleetname)
+      a=dat$catch%>%filter(fleet==id)
+      dat$catch=dat$catch%>%filter(!fleet==id)
+      a=left_join(a,Indoktch%>%
+                    dplyr::select(Year,catch)%>%rename(catch1=catch),
+                  by=c('year'='Year'))%>%
+                  mutate(catch1=ifelse(is.na(catch1),0,catch1),
+                         catch=catch-catch1,
+                         catch=catch+(catch1*Scen$Difference.value))%>%
+                  dplyr::select(-catch1)
+      dat$catch=rbind(a,dat$catch)%>%arrange(fleet,year,seas) 
+    }
+    r4ss::SS_writedat(datlist=dat, outfile=file.path(scen_path_OM, 'data.dat'), verbose = FALSE, overwrite = TRUE)
+    r4ss::SS_writectl(ctllist=control, outfile=file.path(scen_path_OM, 'control.ctl'), verbose = FALSE, overwrite = TRUE)
+  }
+  
+  #4. Add changes in OM model structure for future projections
   fore.OM$Nforecastyrs=1
   fore.OM=fore.OM[-match('ForeCatch',names(fore.OM))]
   r4ss::SS_writeforecast(fore.OM, scen_path_OM, verbose = FALSE, overwrite = TRUE)
@@ -59,9 +108,6 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   fore_new.OM=fore_new.OM[-match('ForeCatch',names(fore_new.OM))]
   r4ss::SS_writeforecast(fore_new.OM, scen_path_OM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
   #if(file.exists(paste(scen_path_OM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_OM, "forecast.ss_new")) # to make sure it is not used.
-  
-  
-  dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
   first.future.yr=dat$endyr+1
   current.fleets=grep(paste(cur.fleets,collapse='|'),dat$fleetinfo$fleetname)
   template_mod_change <- create_future_om_list(example_type = "model_change")  
@@ -78,7 +124,6 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   rec_dev_specify$input$value <- NA
   
     #Random fluctuations in gear selectivity
-  control <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ctl"),verbose = FALSE)
   sel.pars=rownames(control$size_selex_parms)
   mod_change_sel <- template_mod_change[[1]]
   mod_change_sel$pars <- sel.pars[grep('SizeSel_P_1_Southern.shark_2',sel.pars)]
@@ -91,7 +136,7 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   future_om_list <- list(mod_change_sel, rec_dev_specify)
   
   
-  #4. Create sampling scheme for projections
+  #5. Create sampling scheme for projections
   datfile_path=file.path(scen_path_OM, "data.dat")
   sample_struct <- SSMSE::create_sample_struct(dat = datfile_path, nyrs = proj.yrs)
   
@@ -99,9 +144,9 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   sample_struct$catch=sample_struct$catch%>%
                         filter(FltSvy%in%current.fleets)
     #cpue
-  future.obs.yrs=sort(unique(sample_struct$catch$Yr))
+  future.obs.yrs=sort(unique(sample_struct$catch$Yr))   
   future.obs.yrs=future.obs.yrs[proj.yrs.with.obs]
-  sample_struct$CPUE <- expand.grid(Yr = future.obs.yrs,  
+  if('index'%in%colnames(dat$CPUE)) sample_struct$CPUE <- expand.grid(Yr = future.obs.yrs,  
                                     Seas = unique(dat$CPUE$seas),
                                     FltSvy = unique(dat$CPUE$index), 
                                     SE=future.cv)%>%
@@ -119,7 +164,7 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
                               filter(FltSvy%in%current.fleets)
   
     #mean body weight
-  sample_struct$meanbodywt <- expand.grid(Yr = future.obs.yrs,  
+  if(!is.null(dat$meanbodywt))sample_struct$meanbodywt <- expand.grid(Yr = future.obs.yrs,  
                                           Seas = unique(dat$meanbodywt$Seas),
                                           FltSvy = unique(dat$meanbodywt$Fleet), 
                                           Part = unique(dat$meanbodywt$Part),
@@ -132,7 +177,7 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   names(samp_struct_list)=Scen$Scenario
   
   
-  #5. Set up Management procedure
+  #6. Set up Management procedure
   if(First.run) 
   {
     #get quantities of interest
@@ -142,7 +187,7 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
     SSB_Virgin=dum[grep("SSB_Virgin",dum$Label),'Value']
     SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
     SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
-    BLimit=round(Scen$Limit*SSB_MSY.over.SSB_Virgin,2)
+    BLimit=round(max(0.2,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   #ACA
     BThreshold=round(Scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
     BTarget=round(Scen$Target*SSB_MSY.over.SSB_Virgin,2)
     rm(Report,dum,SSB_MSY.over.SSB_Virgin)
@@ -175,14 +220,13 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
     #if(file.exists(paste(scen_path_EM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_EM, "forecast.ss_new")) # to make sure it is not used.
   }
   
-  #6. Run SSSMSE 
+  #7. Run SSSMSE 
     #rename some files (doesn't run otherwise)
    fn.rename(paste(scen_path_OM,'data_echo.ss_new',sep='/'), paste(scen_path_OM,'data.ss_new',sep='/'))
    fn.rename(paste(scen_path_EM,'data_echo.ss_new',sep='/'), paste(scen_path_EM,'data.ss_new',sep='/'))
    fn.rename(paste(scen_path_OM,'ss_win.log',sep='/'), paste(scen_path_OM,'ss.log',sep='/'))
    fn.rename(paste(scen_path_EM,'ss_win.log',sep='/'), paste(scen_path_EM,'ss.log',sep='/'))
   
-  tic()
   out <- SSMSE::run_SSMSE(scen_name_vec = Scen$Scenario,      # name of the scenario
                           out_dir_scen_vec = sp_path_out,     # directory in which to run the scenario 
                           iter_vec = Nsims,
@@ -201,7 +245,6 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
                           seed = 666, # changing each time a chunk of runs is done will help ensure there is stochacisity 
                           run_parallel = TRUE,
                           n_cores = parallelly::availableCores()-1)
-  toc()
 }
 
 
@@ -213,9 +256,9 @@ fn.implement.SSMSE.their.way=function(WD,OM.scens,EM.scens,assess_path,cur.fleet
   fig_path <- "figures"
   runs_path <- "model_runs"
   mods_path <- "input_models"
-  if(!dir.exists(fig_path))dir.create(fig_path)
-  if(!dir.exists(runs_path))dir.create(runs_path)
-  if(!dir.exists(mods_path))dir.create(mods_path)
+  fn.create.folder(fig_path)
+  fn.create.folder(runs_path)
+  fn.create.folder(mods_path)
   
   #2. Define OM and EM scenarios
   Report=SS_output(assess_path,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)   
@@ -227,9 +270,9 @@ fn.implement.SSMSE.their.way=function(WD,OM.scens,EM.scens,assess_path,cur.fleet
   EM.scens=EM.scens%>%
             mutate(SPR_Btgt=round(SPR_Btgt*SPR_Btgt.scalar,2),
                    BLimit=round(Limit*SSB_MSY.over.SSB_Virgin,2),
-            BThreshold=round(Threshold*SSB_MSY.over.SSB_Virgin,2),
-            BTarget=round(Target*SSB_MSY.over.SSB_Virgin,2),
-            EM_path=file.path(mods_path,Ref.point))
+                   BThreshold=round(Threshold*SSB_MSY.over.SSB_Virgin,2),
+                   BTarget=round(Target*SSB_MSY.over.SSB_Virgin,2),
+                   EM_path=file.path(mods_path,Ref.point))
 
   scenarios=merge(EM.scens,OM.scens,by=NULL)%>%
     relocate(EM_path)%>%
@@ -248,7 +291,7 @@ fn.implement.SSMSE.their.way=function(WD,OM.scens,EM.scens,assess_path,cur.fleet
                                  collapse = '|'), negate = TRUE)
   for(u in 1:nrow(EM.scens))
   {
-    if(!dir.exists(EM.scens$EM_path[u]))dir.create(EM.scens$EM_path[u]) 
+    fn.create.folder(EM.scens$EM_path[u]) 
     invisible(lapply(list.of.files, function(x) file.copy(paste(assess_path, x, sep = "/"), 
                                                           to = EM.scens$EM_path[u], recursive = TRUE)))
     
@@ -395,7 +438,7 @@ fn.copy.RatPack.files=function(inpath,sp,outpath,file.name)
   sink()
   close(zz)
 }  
-fun.populate.HSE=function(i,SS.path)
+fun.populate.HSE=function(i,SS.path,scen)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
   cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE)
@@ -440,17 +483,40 @@ fun.populate.HSE=function(i,SS.path)
   SSB_Virgin=dum[grep("SSB_Virgin",dum$Label),'Value']
   SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
   SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
-  LISTA$HCR.target=round(1.2*SSB_MSY.over.SSB_Virgin,2)
-  LISTA$HCR.break=round(SSB_MSY.over.SSB_Virgin,2)
-  LISTA$HCR.limit=round(max(0.2,0.5*SSB_MSY.over.SSB_Virgin),2)
+  LISTA$HCR.target=round(scen$Target*SSB_MSY.over.SSB_Virgin,2)
+  LISTA$HCR.break=round(scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
+  LISTA$HCR.limit=round(max(0.2,scen$Limit*SSB_MSY.over.SSB_Virgin),2)  
   LISTA$allocation.of.fleets.to.regions=as.data.frame(matrix(rep(1,n.fleets+n.surveys),ncol=1))  
   return(LISTA)
 }
-fun.populate.OPD=function(i,SS.path,Nregions=1)
+fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
   cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE)
   Report=SS_output(SS.path,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)
+  
+  #Update OM when Scenario info for scenarios not tested during the Assessment 
+  if(!is.na(Scen$Difference))
+  {
+    if(Scen$Difference=='lower.steepness')    
+    {
+      cntrl$SR_parms[match('SR_BH_steep',row.names(cntrl$SR_parms)),'INIT']=Scen$Difference.value
+    }
+    if(Scen$Difference=='IUU') 
+    {
+      id=match('Other',dat$fleetinfo$fleetname)
+      a=dat$catch%>%filter(fleet==id)
+      dat$catch=dat$catch%>%filter(!fleet==id)
+      a=left_join(a,Indoktch%>%
+                    dplyr::select(Year,catch)%>%rename(catch1=catch),
+                  by=c('year'='Year'))%>%
+        mutate(catch1=ifelse(is.na(catch1),0,catch1),
+               catch=catch-catch1,
+               catch=catch+(catch1*Scen$Difference.value))%>%
+        dplyr::select(-catch1)
+      dat$catch=rbind(a,dat$catch)%>%arrange(fleet,year,seas) 
+    }
+  }
   
   LISTA=list()
   
@@ -518,6 +584,14 @@ fun.populate.OPD=function(i,SS.path,Nregions=1)
   if(length(id)>0) Sels=Sels%>%filter(!Fleet==id)
   Sels=Sels%>%dplyr::select(-c(Factor,Fleet,Yr,Sex,Label))
   LISTA$Number.of.extra.selectivity.time.blocks.by.fleet=rep(0,n.fleets)
+   if(!is.na(Scen$Difference) & Scen$Difference=='NSF.logis.sel')        
+  {
+    id=match('Northern.shark',row.names(cntrl$size_selex_types))
+    L50=cntrl$MG_parms[match('Mat50%_Fem_GP_1',row.names(cntrl$MG_parms)),'INIT']
+    Len.cls=as.numeric(colnames(Sels))
+    Sels[id,]=1/(1+exp(-log(19)*(Len.cls-L50)/10))
+  }
+  
   LISTA$Initial.selectivity.at.length.by.fleet=round(Sels,3)  
   LISTA$stdev.for.selectivity_length.bin.correlation=rep(0,nrow(Sels))  
   Sels.ret=Sels
