@@ -27,9 +27,8 @@ fn.right.format=function(x,var)
            mutate(P_7=0,P_8=0))
 }
 # SSMSE -----------------------------------------------------------------
-fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Scen,
-                        First.run,proj.yrs,proj.yrs.with.obs,yrs.between.assess,
-                        future.cv,Neff.future,Nsims=niters,cur.fleets)
+fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
+                               proj.yrs,proj.yrs.with.obs,Neff.future)
 {
   #1. Bring in Assessment model
   Assessment.location=paste(sp_path_assessment,Scen$Assessment.path,sep='/')
@@ -48,11 +47,12 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_OM, recursive = TRUE)))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_EM, recursive = TRUE)))
   
+  
+  #3. Bring in OM and update for scenarios not tested during the Assessment 
   fore.OM <- r4ss::SS_readforecast(file.path(scen_path_OM, "forecast.ss"),verbose = FALSE)
   dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
   control <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ctl"),verbose = FALSE)
   
-  #3. Update OM when Scenario info for scenarios not tested during the Assessment 
   if(!is.na(Scen$Difference))
   {
     if(Scen$Difference=='NSF.logis.sel')
@@ -70,7 +70,13 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
     }
     if(Scen$Difference=='lower.steepness')
     {
-      control$SR_parms[match('SR_BH_steep',row.names(control$SR_parms)),'INIT']=Scen$Difference.value
+      control$SR_parms[match('SR_BH_steep',row.names(control$SR_parms)),c('LO','INIT')]=c(0.25,Scen$Difference.value)
+    }
+    if(Scen$Difference=='M.contstant')
+    {
+      nn=ncol(control$natM)
+      control$natM[1,]=rep(Scen$Difference.value,nn)
+      control$natM[2,]=rep(Scen$Difference.value,nn)
     }
     if(Scen$Difference=='rep.cycle')
     {
@@ -107,12 +113,100 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   fore_new.OM$Nforecastyrs=1
   fore_new.OM=fore_new.OM[-match('ForeCatch',names(fore_new.OM))]
   r4ss::SS_writeforecast(fore_new.OM, scen_path_OM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
-  #if(file.exists(paste(scen_path_OM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_OM, "forecast.ss_new")) # to make sure it is not used.
+
+  
+  #5. Set up Management procedure (EM)
+    #get quantities of interest
+  Report=SS_output(scen_path_EM,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)   
+  dum=Report$derived_quants
+  SPR_Btgt=round(dum[grep("SPR_Btgt",dum$Label),'Value'],2)  
+  SSB_Virgin=dum[grep("SSB_Virgin",dum$Label),'Value']
+  SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
+  SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
+  BLimit=round(max(0.2,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   
+  BThreshold=round(Scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
+  BTarget=round(Scen$Target*SSB_MSY.over.SSB_Virgin,2)
+  rm(Report,dum,SSB_MSY.over.SSB_Virgin)
+  
+    #bring in forecast file
+  fore <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss"),verbose = FALSE) 
+  fore$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
+  fore$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
+  fore$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
+  fore$SPRtarget <- SPR_Btgt
+  fore$ControlRuleMethod <- 0 # 0, don't use a ramp HCR at all; 1, catch as function of SSB; 2, F as function of SSB 
+  fore$BforconstantF <- BTarget
+  fore$BfornoF <- BLimit
+  fore=fore[-match('ForeCatch',names(fore))]
+  fore$Nforecastyrs=1
+  r4ss::SS_writeforecast(fore, scen_path_EM, verbose = FALSE, overwrite = TRUE)
+  
+  fore_new.OM <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss_new"),verbose = FALSE)
+  fore_new.OM$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
+  fore_new.OM$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
+  fore_new.OM$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
+  fore_new.OM$SPRtarget <- SPR_Btgt
+  fore_new.OM$ControlRuleMethod <- 0 # 0, don't use a ramp HCR at all; 1, catch as function of SSB; 2, F as function of SSB 
+  fore_new.OM$BforconstantF <- BTarget
+  fore_new.OM$BfornoF <- BLimit
+  fore_new.OM$Nforecastyrs=1
+  fore_new.OM=fore_new.OM[-match('ForeCatch',names(fore_new.OM))]
+  r4ss::SS_writeforecast(fore_new.OM, scen_path_EM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
+  #if(file.exists(paste(scen_path_EM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_EM, "forecast.ss_new")) # to make sure it is not used.
+  
+  
+  #6. Rename some files (doesn't run otherwise)
+   fn.rename(paste(scen_path_OM,'data_echo.ss_new',sep='/'), paste(scen_path_OM,'data.ss_new',sep='/'))
+   fn.rename(paste(scen_path_EM,'data_echo.ss_new',sep='/'), paste(scen_path_EM,'data.ss_new',sep='/'))
+   fn.rename(paste(scen_path_OM,'ss_win.log',sep='/'), paste(scen_path_OM,'ss.log',sep='/'))
+   fn.rename(paste(scen_path_EM,'ss_win.log',sep='/'), paste(scen_path_EM,'ss.log',sep='/'))
+}
+
+fn.run.SSSMSE=function(Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,yrs.between.assess,cur.fleets,future.cv)
+{
+  scen_path_OM=paste(sp_path_OM,Scen$Scenario,sep='/')
+  scen_path_EM=paste(sp_path_EM,Scen$Scenario,sep='/')
+  
+  #1. Create sampling scheme for projections
+  dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
+  
+  datfile_path=file.path(scen_path_OM, "data.dat")
+  sample_struct <- SSMSE::create_sample_struct(dat = datfile_path, nyrs = proj.yrs)
+    #catch
+  sample_struct$catch=sample_struct$catch%>%
+    filter(FltSvy%in%current.fleets)
+    #cpue
+  future.obs.yrs=sort(unique(sample_struct$catch$Yr))   
+  future.obs.yrs=future.obs.yrs[proj.yrs.with.obs]
+  if('index'%in%colnames(dat$CPUE)) sample_struct$CPUE <- expand.grid(Yr = future.obs.yrs,  
+                                                                      Seas = unique(dat$CPUE$seas),
+                                                                      FltSvy = unique(dat$CPUE$index), 
+                                                                      SE=future.cv)%>%filter(FltSvy%in%current.fleets)
+    #length comps
+  future.Neff=round(mean(dat$lencomp$Nsamp))
+  if(!is.null(Neff.future)) future.Neff=Neff.future
+  sample_struct$lencomp <- expand.grid(Yr = future.obs.yrs,  
+                                       Seas = unique(dat$lencomp$Seas),
+                                       FltSvy = unique(dat$lencomp$FltSvy), 
+                                       Sex = 1:2, 
+                                       Part = unique(dat$lencomp$Part),
+                                       Nsamp = future.Neff)%>%filter(FltSvy%in%current.fleets)
+    #mean body weight
+  if(!is.null(dat$meanbodywt))sample_struct$meanbodywt <- expand.grid(Yr = future.obs.yrs,  
+                                                                      Seas = unique(dat$meanbodywt$Seas),
+                                                                      FltSvy = unique(dat$meanbodywt$Fleet), 
+                                                                      Part = unique(dat$meanbodywt$Part),
+                                                                      Type = unique(dat$meanbodywt$Type),
+                                                                      SE = future.cv)%>%filter(FltSvy%in%current.fleets)
+  samp_struct_list <- list(sample_struct)
+  names(samp_struct_list)=Scen$Scenario
+  
+  #2. Create future OM
   first.future.yr=dat$endyr+1
   current.fleets=grep(paste(cur.fleets,collapse='|'),dat$fleetinfo$fleetname)
   template_mod_change <- create_future_om_list(example_type = "model_change")  
   
-    #Random fluctuations in rec devs
+   #Random fluctuations in rec devs
   rec_dev_specify <- template_mod_change[[1]]
   rec_dev_specify$pars <- "rec_devs"
   rec_dev_specify$scen <- c("replicate", "all") # use c("random", "all") if did not want to replicate the same recdevs across scenarios
@@ -135,98 +229,9 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
   
   future_om_list <- list(mod_change_sel, rec_dev_specify)
   
+
   
-  #5. Create sampling scheme for projections
-  datfile_path=file.path(scen_path_OM, "data.dat")
-  sample_struct <- SSMSE::create_sample_struct(dat = datfile_path, nyrs = proj.yrs)
-  
-    #catch
-  sample_struct$catch=sample_struct$catch%>%
-                        filter(FltSvy%in%current.fleets)
-    #cpue
-  future.obs.yrs=sort(unique(sample_struct$catch$Yr))   
-  future.obs.yrs=future.obs.yrs[proj.yrs.with.obs]
-  if('index'%in%colnames(dat$CPUE)) sample_struct$CPUE <- expand.grid(Yr = future.obs.yrs,  
-                                    Seas = unique(dat$CPUE$seas),
-                                    FltSvy = unique(dat$CPUE$index), 
-                                    SE=future.cv)%>%
-                            filter(FltSvy%in%current.fleets)
-  
-    #length comps
-  future.Neff=round(mean(dat$lencomp$Nsamp))
-  if(!is.null(Neff.future)) future.Neff=Neff.future
-  sample_struct$lencomp <- expand.grid(Yr = future.obs.yrs,  
-                                       Seas = unique(dat$lencomp$Seas),
-                                       FltSvy = unique(dat$lencomp$FltSvy), 
-                                       Sex = 1:2, 
-                                       Part = unique(dat$lencomp$Part),
-                                       Nsamp = future.Neff)%>%
-                              filter(FltSvy%in%current.fleets)
-  
-    #mean body weight
-  if(!is.null(dat$meanbodywt))sample_struct$meanbodywt <- expand.grid(Yr = future.obs.yrs,  
-                                          Seas = unique(dat$meanbodywt$Seas),
-                                          FltSvy = unique(dat$meanbodywt$Fleet), 
-                                          Part = unique(dat$meanbodywt$Part),
-                                          Type = unique(dat$meanbodywt$Type),
-                                          SE = future.cv)%>%
-                              filter(FltSvy%in%current.fleets)
-  
-  
-  samp_struct_list <- list(sample_struct)
-  names(samp_struct_list)=Scen$Scenario
-  
-  
-  #6. Set up Management procedure
-  if(First.run) 
-  {
-    #get quantities of interest
-    Report=SS_output(scen_path_EM,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)   
-    dum=Report$derived_quants
-    SPR_Btgt=round(dum[grep("SPR_Btgt",dum$Label),'Value'],2)  
-    SSB_Virgin=dum[grep("SSB_Virgin",dum$Label),'Value']
-    SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
-    SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
-    BLimit=round(max(0.2,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   #ACA
-    BThreshold=round(Scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
-    BTarget=round(Scen$Target*SSB_MSY.over.SSB_Virgin,2)
-    rm(Report,dum,SSB_MSY.over.SSB_Virgin)
-    
-    #bring in forecast file
-    fore <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss"),verbose = FALSE) 
-    fore$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
-    fore$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
-    fore$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
-    fore$SPRtarget <- SPR_Btgt
-    fore$ControlRuleMethod <- 0 # 0, don't use a ramp HCR at all; 1, catch as function of SSB; 2, F as function of SSB 
-    fore$BforconstantF <- BTarget
-    fore$BfornoF <- BLimit
-    fore=fore[-match('ForeCatch',names(fore))]
-    fore$Nforecastyrs=1
-    r4ss::SS_writeforecast(fore, scen_path_EM, verbose = FALSE, overwrite = TRUE)
-    
-    fore_new.OM <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss_new"),verbose = FALSE)
-    fore_new.OM$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
-    fore_new.OM$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
-    fore_new.OM$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
-    fore_new.OM$SPRtarget <- SPR_Btgt
-    fore_new.OM$ControlRuleMethod <- 0 # 0, don't use a ramp HCR at all; 1, catch as function of SSB; 2, F as function of SSB 
-    fore_new.OM$BforconstantF <- BTarget
-    fore_new.OM$BfornoF <- BLimit
-    fore_new.OM$Nforecastyrs=1
-    fore_new.OM=fore_new.OM[-match('ForeCatch',names(fore_new.OM))]
-    r4ss::SS_writeforecast(fore_new.OM, scen_path_EM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
-    
-    #if(file.exists(paste(scen_path_EM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_EM, "forecast.ss_new")) # to make sure it is not used.
-  }
-  
-  #7. Run SSSMSE 
-    #rename some files (doesn't run otherwise)
-   fn.rename(paste(scen_path_OM,'data_echo.ss_new',sep='/'), paste(scen_path_OM,'data.ss_new',sep='/'))
-   fn.rename(paste(scen_path_EM,'data_echo.ss_new',sep='/'), paste(scen_path_EM,'data.ss_new',sep='/'))
-   fn.rename(paste(scen_path_OM,'ss_win.log',sep='/'), paste(scen_path_OM,'ss.log',sep='/'))
-   fn.rename(paste(scen_path_EM,'ss_win.log',sep='/'), paste(scen_path_EM,'ss.log',sep='/'))
-  
+  #3. run SSMSE
   out <- SSMSE::run_SSMSE(scen_name_vec = Scen$Scenario,      # name of the scenario
                           out_dir_scen_vec = sp_path_out,     # directory in which to run the scenario 
                           iter_vec = Nsims,
@@ -245,8 +250,8 @@ fn.apply.SSMSE=function(sp_path_assessment,sp_path_OM,sp_path_EM,sp_path_out,Sce
                           seed = 666, # changing each time a chunk of runs is done will help ensure there is stochacisity 
                           run_parallel = TRUE,
                           n_cores = parallelly::availableCores()-1)
+  
 }
-
 
 fn.implement.SSMSE.their.way=function(WD,OM.scens,EM.scens,assess_path,cur.fleets,proj.yrs,Nsims,   #REMOVE THIS
                             proj.yrs.with.obs,yrs.between.assess)
@@ -476,7 +481,8 @@ fun.populate.HSE=function(i,SS.path,scen)
   LISTA$Retention.inflection_Retention.slope_variance.adjustment.CPUE_variance.adjustment.discard=rep(0,n.fleets) 
   LISTA$Variance.adjustment.length_variance.adjustment.age=rep(1,n.fleets) 
   LISTA$Ageing.error=rep(0,dat$Nages+1)
-  LISTA$SSR0init=exp(Report$estimated_non_dev_parameters[match('SR_LN(R0)',rownames(Report$estimated_non_dev_parameters)),]$Value)
+  LISTA$SSR0init=exp(fn.get(parname='SR_LN(R0)',from=cntrl$SR_parms))
+  #LISTA$SSR0init=exp(Report$estimated_non_dev_parameters[match('SR_LN(R0)',rownames(Report$estimated_non_dev_parameters)),]$Value)
   #reference points
   dum=Report$derived_quants
   SPR_Btgt=round(dum[grep("SPR_Btgt",dum$Label),'Value'],2)  
@@ -500,8 +506,15 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
   {
     if(Scen$Difference=='lower.steepness')    
     {
-      cntrl$SR_parms[match('SR_BH_steep',row.names(cntrl$SR_parms)),'INIT']=Scen$Difference.value
+      cntrl$SR_parms[match('SR_BH_steep',row.names(cntrl$SR_parms)),c('LO','INIT')]=c(0.25,Scen$Difference.value)
     }
+    if(Scen$Difference=='M.contstant')
+    {
+      nn=ncol(cntrl$natM)
+      cntrl$natM[1,]=rep(Scen$Difference.value,nn)
+      cntrl$natM[2,]=rep(Scen$Difference.value,nn)
+    }
+    
     if(Scen$Difference=='IUU') 
     {
       id=match('Other',dat$fleetinfo$fleetname)

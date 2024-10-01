@@ -102,6 +102,7 @@ N.sp=length(Keep.species)
 species_logistic.selectivity.NSF=sort(unique(Operating_models%>%filter(!is.na(NSF.selectivity))%>%pull(Species)))  
 species_IUU_indonesia=sort(unique(Operating_models%>%filter(!is.na(Indo.IUU))%>%pull(Species)))    
 
+subset.scenarios=TRUE  #test scenario grid?? way time consuming
 
 # Create relevant directories and handles for each MSE framework  ---------------
   #SSMSE
@@ -130,50 +131,80 @@ for(i in 1:N.sp)
     data.frame%>%mutate(row.number=row_number())
   
   #Define MSE scenarios (combination of OMs and Harvest strategies)
-  SCENARIOS[[i]]=merge(Management_scenarios,OM_scenarios,by=NULL)%>%
+  dd=merge(Management_scenarios,OM_scenarios,by=NULL)%>%
     arrange(row.number,Ref.point)%>%
     mutate(Scenario=paste0('S',row_number()))%>%
     relocate(Ref.point,Scenario)%>%dplyr::select(-row.number)
-  
+  if(subset.scenarios)
+  {
+    dd=dd%>%
+      mutate(Keep=ifelse(Ref.point=='0.5_1_1.2' | is.na(Difference),'YES','NO'))%>%
+      filter(Keep=='YES')%>%dplyr::select(-Keep)
+  }
+  SCENARIOS[[i]]=dd%>%mutate(Scenario=paste0('S',row_number()))
 }
 
 # Run SSMSE loop over each species-scenario combination ---------------
-tic()
-for(i in 1:N.sp)
+
+#1. Create SSMSE folders and files
+if(First.Run.SSMSE)
 {
-  #set up paths
-  sp_path_assessment=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',sep='/')
-  sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
-  sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
-  sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
-  fn.create.folder(x=sp_path_OM)
-  fn.create.folder(x=sp_path_EM)
-  fn.create.folder(x=sp_path_out)
-
-  Scenarios=SCENARIOS[[i]]
-  
-  for(s in 1:nrow(Scenarios))
+  tic()
+  for(i in 1:N.sp)
   {
-    print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios[s,],'-----------'))
-    Indoktch=NULL
-    if(!is.na(Scenarios$Difference[s]) & Scenarios$Difference[s]=="IUU")
+    #set up paths
+    sp_path_assessment=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',sep='/')
+    sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
+    sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
+    sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
+    fn.create.folder(x=sp_path_OM)
+    fn.create.folder(x=sp_path_EM)
+    fn.create.folder(x=sp_path_out)
+    
+    Scenarios=SCENARIOS[[i]]
+    
+    for(s in 1:nrow(Scenarios))
     {
-      Indoktch=Catch.species.dataset%>%filter(Name==Keep.species[i] & Data.set=="Indonesia")
-    }
-    fn.apply.SSMSE(sp_path_assessment, sp_path_OM,sp_path_EM, sp_path_out, Scen=Scenarios[s,], 
-                       First.run=First.Run.SSMSE, proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
-                       yrs.between.assess=Proj.years.between.ass, future.cv=proj.CV, Neff.future=NULL, 
-                       Nsims=niters, cur.fleets=c('Other','Southern.shark_2'))
-  } #end s
-  
-} #end i
-toc()
+      print(paste('SSMSE create files for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      Indoktch=NULL
+      if(!is.na(Scenarios$Difference[s]) & Scenarios$Difference[s]=="IUU")
+      {
+        Indoktch=Catch.species.dataset%>%filter(Name==Keep.species[i] & Data.set=="Indonesia")
+      }
+      fn.create.SSMSE.files(sp_path_assessment, sp_path_OM, sp_path_EM, Scen=Scenarios[s,], 
+                            proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, Neff.future=NULL)
+    } #end s
+    rm(sp_path_assessment,sp_path_OM,sp_path_EM,Scenarios)
+  } #end i
+  toc()
+}
 
+
+#2. Execute SSMSE
+if(!First.Run.SSMSE)
+{
+  for(i in 1:N.sp)
+  {
+    Scenarios=SCENARIOS[[i]]  
+    sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
+    sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
+    sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
+    
+    for(s in 1:nrow(Scenarios))
+    {
+      print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      fn.run.SSSMSE(Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
+                    Nsims=niters, yrs.between.assess=Proj.years.between.ass,
+                    cur.fleets=c('Other','Southern.shark_2'), future.cv=proj.CV)
+    } #end s
+    rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
+  } #end i
+}
 
 
 # Run RatPack loop over each species-scenario combination --------------
 
-  #1. Create RatPack folders and files  
+#1. Create RatPack folders and files  
 rat.pack.folders=c('inputs','outputs','PGMSY','Results','Stock_Synthesis','Stock_Synthesis3.30base')
 rat.pack.files=c('run.bat','Whiskery_test.proj','Whiskery.OPD','Whiskery.HSE')
 
@@ -187,7 +218,7 @@ if(First.Run.RatPack)
     if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  #cannot test rep cycle in RatPack
     for(s in 1:nrow(Scenarios))
     {
-      print(paste('RatPack run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      print(paste('RatPack create files for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       
       Indoktch=NULL
@@ -237,14 +268,12 @@ if(First.Run.RatPack)
       print(dumy,row.names=F)
       sink()
       rm(dumy)
-    }
-  }
+    } #end s
+  } #end i
   toc()
 }
 
-
-
-#2. Execute RatPack #ACA
+#2. Execute RatPack 
 if(!First.Run.RatPack)
 {
   tic()
@@ -253,9 +282,13 @@ if(!First.Run.RatPack)
     Scenarios=SCENARIOS[[i]]
     aaid=which(Scenarios$Difference%in%'rep.cycle')
     if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  #cannot test rep cycle in RatPack
-    
-    for(s in 1:nrow(Scenarios)) fn.run.RatPack.exe(where.exe=sp_path_scen,exe.name='run.bat')
-  }
+    for(s in 1:nrow(Scenarios))
+    {
+      print(paste('RatPack run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
+      fn.run.RatPack.exe(where.exe=sp_path_scen,exe.name='run.bat')
+    } #end s
+  } #end i
   toc()
 }
    
