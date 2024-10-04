@@ -10,7 +10,7 @@
 # Then, assessments will occur in years 100 and 103.
 # The OM runs through year 106.
 
-
+#remotes::install_github("nmfs-fish-tools/SSMSE")
 library(SSMSE)
 library(r4ss)
 library(foreach) #if using run_parallel = TRUE

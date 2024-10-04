@@ -5,8 +5,12 @@
 #notes: Alternative state of nature are considered thru multiple OM (Operating Model):
 #             Alternative hypothesis on Steepness, Natural mortality, selectivity and illegal fishing
 #       Alternative harvest control rules and reference points are considered thru multiple EM (Estimation Model):
-#             X, Y, Z
-#       RatPack .OPD, .HSE and .proj files are set up manually based on exported text file
+#             Alternative values of limit, threshold and target reference points
+#       The Alternative OM and EM are defined in hndl.mse.comp below based a the 'Scenarios' spreadsheet
+#       Most files are set up automatically by this script but there is some manual tweaking to be done:
+#           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
+#                    from input_HSE.txt and input_OPD.txt
+#           SSMSE: for time changing parameters (e.g., blocks) add 'control_timevary_' to the control file in the EM
 
 # SSMSE reference material:
 #     https://nmfs-fish-tools.github.io/SSMSE/manual
@@ -29,8 +33,9 @@ library(r4ss)
 library(tictoc)
 library(tidyverse)
 library(readxl)
+library(doParallel)
 #library(Hmisc)
-
+.libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
 # Set up paths and source functions  ---------------
 fn.user=function(x1,x2)paste(x1,Sys.getenv("USERNAME"),x2,sep='/')
 if(!exists('handl_OneDrive')) source(fn.user(x1='C:/Users',
@@ -46,10 +51,12 @@ assessment.year=2022
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
 
-#outputs
+#paths for each method
 out.path.SSMSE=handl_OneDrive("Analyses/MSE/Shark harvest strategy/SSMSE")   
 out.path.RatPack=handl_OneDrive("Analyses/MSE/Shark harvest strategy/RatPack")   
 
+#overall outputs
+outs=handl_OneDrive("Analyses/MSE/Shark harvest strategy/z_Outputs") 
 
 # Define MSE components ---------------
 #Components: 
@@ -60,6 +67,7 @@ out.path.RatPack=handl_OneDrive("Analyses/MSE/Shark harvest strategy/RatPack")
 # 5. Performance measures
 # 6. Future data collection
 
+  #Scenarios
 hndl.mse.comp=handl_OneDrive("Analyses/MSE/Shark harvest strategy/Scenarios.xlsx")
 Management_objectives=read_excel(hndl.mse.comp,  sheet = "Management objectives",skip = 0)
 Operating_models=read_excel(hndl.mse.comp,       sheet = "Operating model",skip = 0)
@@ -68,6 +76,7 @@ harvest_control_rule=read_excel(hndl.mse.comp, sheet = "harvest control rule",sk
 performance_indicators=read_excel(hndl.mse.comp, sheet = "Performance measure",skip = 0)
 Future_data_collection=read_excel(hndl.mse.comp, sheet = "Future data collection",skip = 0)
 
+  #Historic catch ranges
 Target.commercial.catch=Management_objectives%>%
                             filter(Ojective.status=='Current')%>%
                             mutate(Type=ifelse(grepl('minimum',Objective),'Min.tones',
@@ -88,7 +97,7 @@ Proj.years=10                          # number of projected years (25)
 Proj.years.obs=seq(1,Proj.years,by=5)  # sampled years in the projected period
 Proj.years.between.ass=2               # years between assessments in the projected period
 proj.CV=0.2                            # CV in the projected period
-
+Effective.pop.size.future=100          #future length comp sample size
 theme_set(theme_light() +
             theme(panel.grid.major.x = element_blank(),
                   panel.grid.minor = element_blank(),
@@ -141,7 +150,7 @@ for(i in 1:N.sp)
       mutate(Keep=ifelse(Ref.point=='0.5_1_1.2' | is.na(Difference),'YES','NO'))%>%
       filter(Keep=='YES')%>%dplyr::select(-Keep)
   }
-  SCENARIOS[[i]]=dd%>%mutate(Scenario=paste0('S',row_number()))
+  SCENARIOS[[i]]=dd%>%mutate(Scenario=paste0('S',row_number()))%>%mutate(Species=Keep.species[i])
 }
 
 # Run SSMSE loop over each species-scenario combination ---------------
@@ -149,6 +158,12 @@ for(i in 1:N.sp)
 #1. Create SSMSE folders and files
 if(First.Run.SSMSE)
 {
+  #specify time changing parameters
+  BLK.pat=fn.create.list(Keep.species)  
+  BLK.pat$'Sandbar shark'=c("Size_DblN_peak_Southern.shark_1(3)_BLK1mult_1994","Size_DblN_peak_Southern.shark_1(3)_BLK1mult_2000",
+                            "Size_DblN_ascend_se_Southern.shark_1(3)_BLK1mult_1994","Size_DblN_ascend_se_Southern.shark_1(3)_BLK1mult_2000",
+                            "Size_DblN_descend_se_Southern.shark_1(3)_BLK1mult_1994","Size_DblN_descend_se_Southern.shark_1(3)_BLK1mult_2000")
+  BLK.pat$'Whiskery shark'=c("LnQ_base_Southern.shark_1(3)_BLK1repl_1975","LnQ_base_Southern.shark_1(3)_BLK1repl_1984")
   tic()
   for(i in 1:N.sp)
   {
@@ -172,7 +187,7 @@ if(First.Run.SSMSE)
         Indoktch=Catch.species.dataset%>%filter(Name==Keep.species[i] & Data.set=="Indonesia")
       }
       fn.create.SSMSE.files(sp_path_assessment, sp_path_OM, sp_path_EM, Scen=Scenarios[s,], 
-                            proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, Neff.future=NULL)
+                            proj.yrs=Proj.years, block.pattern=BLK.pat[[i]])
     } #end s
     rm(sp_path_assessment,sp_path_OM,sp_path_EM,Scenarios)
   } #end i
@@ -186,6 +201,7 @@ if(!First.Run.SSMSE)
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]  
+    sp_path_assessment=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',sep='/')
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
     sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
     sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
@@ -193,9 +209,12 @@ if(!First.Run.SSMSE)
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
-      fn.run.SSSMSE(Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
-                    Nsims=niters, yrs.between.assess=Proj.years.between.ass,
-                    cur.fleets=c('Other','Southern.shark_2'), future.cv=proj.CV)
+      fn.run.SSSMSE(sp_path_assessment,Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
+                    Nsims=niters, Neff.future=Effective.pop.size.future,
+                    proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
+                    yrs.between.assess=Proj.years.between.ass,
+                    cur.fleets=c('Other','Southern.shark_2'), future.cv=proj.CV,
+                    specify.future.OM=FALSE)
     } #end s
     rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
   } #end i
@@ -294,3 +313,18 @@ if(!First.Run.RatPack)
    
 
 
+
+
+# Report outputs ----------------------------------------------------------
+
+#Display MSE scenarios tested
+write.csv(do.call(rbind,SCENARIOS)%>%
+            dplyr::select(-c(Ref.point,EM,Assessment.path))%>%
+            relocate(Species)%>%
+            rename(OM.Difference=Difference,
+                   OM.Difference.value=Difference.value,
+                   EM.Limit=Limit,
+                   EM.Threshold=Threshold,
+                   EM.Target=Target,
+                   EM.SPR_Btgt.scalar=SPR_Btgt.scalar),
+          paste0(outs,'/Table 1.Scenarios.csv'),row.names = F)
