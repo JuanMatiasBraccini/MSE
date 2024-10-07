@@ -2,15 +2,17 @@
 # This script uses SSMSE and RatPack to perform Management Strategy Procedures to inform the development of the 
 #   Shark resource Harvest Strategy based on the 4 indicator species
 
-#notes: Alternative state of nature are considered thru multiple OM (Operating Model):
-#             Alternative hypothesis on Steepness, Natural mortality, selectivity and illegal fishing
+#notes: Alternative states of nature are considered thru multiple OM (Operating Model):
+#             alternative hypotheses on Steepness, Natural mortality, selectivity and illegal fishing
 #       Alternative harvest control rules and reference points are considered thru multiple EM (Estimation Model):
-#             Alternative values of limit, threshold and target reference points
-#       The Alternative OM and EM are defined in hndl.mse.comp below based a the 'Scenarios' spreadsheet
+#             alternative values of limit, threshold and target reference points
+#       The Alternative OM and EM are defined in 'hndl.mse.comp' below based on the 'Scenarios' spreadsheet
 #       Most files are set up automatically by this script but there is some manual tweaking to be done:
 #           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
 #                    from input_HSE.txt and input_OPD.txt
-#           SSMSE: for time changing parameters (e.g., blocks) add 'control_timevary_' to the control file in the EM
+#           SSMSE:  For the OM and EM, Copy '#_Q_setup' and '#_Q_parms(if_any)' from 'control.ss_new' to 'control.ss'
+#                   For the OM and EM and time changing parameters (i.e., blocks in Q or Selectivity). Copy, 
+#                   'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' (check 'control_timevary_XX.csv')
 
 # SSMSE reference material:
 #     https://nmfs-fish-tools.github.io/SSMSE/manual
@@ -26,7 +28,7 @@
     # Bring back to threshold within 1 generation if between limit and threshold and 
     # within another generation if between threshold and target
 
-
+rm(list=ls(all=TRUE))
 #remotes::install_github("nmfs-fish-tools/SSMSE")
 library(SSMSE)
 library(r4ss)
@@ -154,6 +156,9 @@ for(i in 1:N.sp)
 }
 
 # Run SSMSE loop over each species-scenario combination ---------------
+Current.fleets=fn.create.list(Keep.species)
+Current.fleets$`Gummy shark`=Current.fleets$`Whiskery shark`=c("Other","Southern.shark_2")
+Current.fleets$`Dusky shark`=Current.fleets$`Sandbar shark`=c("Other","Southern.shark_2","Survey")
 
 #1. Create SSMSE folders and files
 if(First.Run.SSMSE)
@@ -198,24 +203,27 @@ if(First.Run.SSMSE)
 #2. Execute SSMSE
 if(!First.Run.SSMSE)
 {
+  SSMSE_outputs=fn.create.list(Keep.species)
   for(i in 1:N.sp)
   {
+    dumy.out=fn.create.list(Scenarios$Scenario)
+    
     Scenarios=SCENARIOS[[i]]  
     sp_path_assessment=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',sep='/')
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
     sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
     sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
-    
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
-      fn.run.SSSMSE(sp_path_assessment,Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
-                    Nsims=niters, Neff.future=Effective.pop.size.future,
-                    proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
-                    yrs.between.assess=Proj.years.between.ass,
-                    cur.fleets=c('Other','Southern.shark_2'), future.cv=proj.CV,
-                    specify.future.OM=FALSE)
+      dumy.out[[s]]=fn.run.SSSMSE(sp_path_assessment,Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
+                                  Nsims=niters, Neff.future=Effective.pop.size.future,
+                                  proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
+                                  yrs.between.assess=Proj.years.between.ass,
+                                  cur.fleets=Current.fleets[[i]], future.cv=proj.CV,
+                                  specify.future.OM=FALSE, apply.future.meanbodywt=FALSE) #doesn't work with future meanbodywt
     } #end s
+    SSMSE_outputs[[i]]=dumy.out
     rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
   } #end i
 }
