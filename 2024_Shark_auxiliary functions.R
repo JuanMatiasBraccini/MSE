@@ -187,7 +187,10 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   SSB_Virgin=dum[grep("SSB_Virgin",dum$Label),'Value']
   SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
   SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
-  BLimit=round(max(0.2,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   
+  Min.bio=0.2
+  if(scen$Limit==0.4) Min.bio=0.15
+  if(scen$Limit==0.6) Min.bio=0.22
+  BLimit=round(max(Min.bio,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   
   BThreshold=round(Scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
   BTarget=round(Scen$Target*SSB_MSY.over.SSB_Virgin,2)
   rm(Report,dum,SSB_MSY.over.SSB_Virgin)
@@ -381,7 +384,7 @@ fn.copy.RatPack.files=function(inpath,sp,outpath,file.name)
   sink()
   close(zz)
 }  
-fun.populate.HSE=function(i,SS.path,scen)
+fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
   cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE)
@@ -400,7 +403,8 @@ fun.populate.HSE=function(i,SS.path,scen)
   }
   a=dat$catch%>%filter(year>0)%>%select(-seas,-catch_se)%>%spread(fleet,catch)
   a$Tot=rowSums(a[,-1],na.rm=T)
-  
+  LISTA$Number.of.future.years=proj.yrs
+  LISTA$Frequency.of.RBC.update=yrs.between.assess
   LISTA$Final.year.TAC=round(mean(a$Tot[(nrow(a)-4):nrow(a)])) 
   LISTA$Recommended.catch.ranges=Target.commercial.catch%>%filter(Species==Keep.species[i])
   LISTA$SSsteepness=fn.get(parname='SR_BH_steep',from=cntrl$SR_parms)  
@@ -429,7 +433,10 @@ fun.populate.HSE=function(i,SS.path,scen)
   SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
   LISTA$HCR.target=round(scen$Target*SSB_MSY.over.SSB_Virgin,2)
   LISTA$HCR.break=round(scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
-  LISTA$HCR.limit=round(max(0.2,scen$Limit*SSB_MSY.over.SSB_Virgin),2)  
+  Min.bio=0.2
+  if(scen$Limit==0.4) Min.bio=0.15
+  if(scen$Limit==0.6) Min.bio=0.22
+  LISTA$HCR.limit=round(max(Min.bio,scen$Limit*SSB_MSY.over.SSB_Virgin),2)  
   LISTA$allocation.of.fleets.to.regions=as.data.frame(matrix(rep(1,n.fleets+n.surveys),ncol=1))  
   return(LISTA)
 }
@@ -526,7 +533,7 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
   
   LISTA$Catches.by.fleet.and.years.and.regions=c(ncol(a)-1,nrow(a),Nregions)
   b=a%>%gather(Fleet,Catch,-year)
-  LISTA$Catch=lapply(split( b , f = b$Fleet ),function(x) x=x%>%dplyr::select(-Fleet)%>%mutate_if(is.numeric, round, 0))
+  LISTA$Catch=lapply(split( b , f = b$Fleet ),function(x) x=x%>%dplyr::select(-Fleet)%>%mutate_if(is.numeric, round, 2))
   
   Sels=Report$sizeselex%>%
     filter(Factor=='Lsel' & Yr==dat$endyr & Sex==1)%>%
@@ -562,8 +569,9 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
   hist.cv=cpue.future.flag
   hist.cv[unique(dat$CPUE$index)]=0.15 
   LISTA$CPUE_hist.cv=hist.cv
-  avrg.q.est=mean(exp(Report$estimated_non_dev_parameters[grepl('LnQ_base',rownames(Report$estimated_non_dev_parameters)),]$Value))
+  avrg.q.est=exp(Report$parameters[grep('LnQ_base',rownames(Report$parameters)),c('Label','Value')]%>%pull(Value)) 
   avrg.q=hist.cv
+  if(length(avrg.q.est)==0) avrg.q.est=NA
   avrg.q[avrg.q>0]=avrg.q.est
   LISTA$CPUE_average.catchability_outputs.NA.if.not.estimated=avrg.q
   LISTA$CPUE_annual.increase.q=rep(0,length(hist.cv))

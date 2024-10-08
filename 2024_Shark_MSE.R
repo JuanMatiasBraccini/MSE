@@ -9,7 +9,8 @@
 #       The Alternative OM and EM are defined in 'hndl.mse.comp' below based on the 'Scenarios' spreadsheet
 #       Most files are set up automatically by this script but there is some manual tweaking to be done:
 #           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
-#                    from input_HSE.txt and input_OPD.txt
+#                    from input_HSE.txt and input_OPD.txt. Only do it for S1, then copy from S1 to other Scenarios and
+#                    then manually update relevant parts only.
 #           SSMSE:  For the OM and EM, Copy '#_Q_setup' and '#_Q_parms(if_any)' from 'control.ss_new' to 'control.ss'
 #                   For the OM and EM and time changing parameters (i.e., blocks in Q or Selectivity). Copy, 
 #                   'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' (check 'control_timevary_XX.csv')
@@ -58,7 +59,7 @@ out.path.SSMSE=handl_OneDrive("Analyses/MSE/Shark harvest strategy/SSMSE")
 out.path.RatPack=handl_OneDrive("Analyses/MSE/Shark harvest strategy/RatPack")   
 
 #overall outputs
-outs=handl_OneDrive("Analyses/MSE/Shark harvest strategy/z_Outputs") 
+outs.path=handl_OneDrive("Analyses/MSE/Shark harvest strategy/z_Outputs") 
 
 # Define MSE components ---------------
 #Components: 
@@ -93,11 +94,11 @@ Catch.species.dataset=read.csv(handl_OneDrive("Analyses/Population dynamics/PSA/
 
 # Define global parameters ---------------
 First.Run.SSMSE=FALSE                  # set to TRUE to generate OMs, Folders, etc
-First.Run.RatPack=FALSE                  
+First.Run.RatPack=FALSE                # don't run as it will over right OPD and HSE files  
 niters <- 2                            # number of simulations per scenario (100)
 Proj.years=10                          # number of projected years (25)
 Proj.years.obs=seq(1,Proj.years,by=5)  # sampled years in the projected period
-Proj.years.between.ass=2               # years between assessments in the projected period
+Proj.years.between.ass=4               # years between assessments in the projected period
 proj.CV=0.2                            # CV in the projected period
 Effective.pop.size.future=100          #future length comp sample size
 theme_set(theme_light() +
@@ -154,6 +155,7 @@ for(i in 1:N.sp)
   }
   SCENARIOS[[i]]=dd%>%mutate(Scenario=paste0('S',row_number()))%>%mutate(Species=Keep.species[i])
 }
+Not.tested.in.Rat.Pack='rep.cycle' #cannot test rep cycle in RatPack
 
 # Run SSMSE loop over each species-scenario combination ---------------
 Current.fleets=fn.create.list(Keep.species)
@@ -241,8 +243,8 @@ if(First.Run.RatPack)
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
-    aaid=which(Scenarios$Difference%in%'rep.cycle')
-    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  #cannot test rep cycle in RatPack
+    aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
+    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  
     for(s in 1:nrow(Scenarios))
     {
       print(paste('RatPack create files for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
@@ -281,7 +283,7 @@ if(First.Run.RatPack)
       #manually populate HSE using this info
       dumy=fun.populate.HSE(i,SS.path=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',
                                             Scenarios$Assessment.path[s],sep='/'),
-                            scen=Scenarios[s,])
+                            scen=Scenarios[s,], proj.yrs=Proj.years, yrs.between.assess=Proj.years.between.ass)
       sink(paste0(sp_path_scen,'/inputs/input_HSE.txt'))
       print(dumy,row.names=F)
       sink()
@@ -307,8 +309,8 @@ if(!First.Run.RatPack)
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
-    aaid=which(Scenarios$Difference%in%'rep.cycle')
-    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  #cannot test rep cycle in RatPack
+    aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
+    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  
     for(s in 1:nrow(Scenarios))
     {
       print(paste('RatPack run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
@@ -334,5 +336,27 @@ write.csv(do.call(rbind,SCENARIOS)%>%
                    EM.Limit=Limit,
                    EM.Threshold=Threshold,
                    EM.Target=Target,
-                   EM.SPR_Btgt.scalar=SPR_Btgt.scalar),
-          paste0(outs,'/Table 1.Scenarios.csv'),row.names = F)
+                   EM.SPR_Btgt.scalar=SPR_Btgt.scalar)%>%
+            mutate(MSE.framework=ifelse(OM.Difference%in%Not.tested.in.Rat.Pack,'SSMSE',c('SSMSE & RatPack'))),
+          paste0(outs.path,'/Table 1.Scenarios.csv'),row.names = F)
+
+Tab.HCR.scens=fn.create.list(Keep.species)
+for(i in 1:N.sp)
+{
+  Scenarios=SCENARIOS[[i]]
+  aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
+  if(length(aaid)>0) Scenarios=Scenarios[-aaid,]  
+  dd=fn.create.list(Scenarios$Scenario)
+  for(s in 1:nrow(Scenarios))
+  {
+    sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
+    dat <- readLines(paste0(sp_path_scen,'/inputs/input_HSE.txt'), warn = FALSE)
+    dd[[s]]=data.frame(Scenario=Scenarios$Scenario[s],
+                       Species=Keep.species[i],
+                       Limit=substr(dat[[grep('HCR.limit',dat)+1]],5,9),
+                       Threshold=substr(dat[[grep('HCR.break',dat)+1]],5,9),
+                       Target=substr(dat[[grep('HCR.target',dat)+1]],5,9))
+  }
+  Tab.HCR.scens[[i]]=do.call(rbind,dd)
+}
+write.csv(do.call(rbind,Tab.HCR.scens),paste0(outs.path,'/Table 1.Scenarios_HCR_values.csv'),row.names = F)
