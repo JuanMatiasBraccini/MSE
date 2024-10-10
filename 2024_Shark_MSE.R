@@ -94,7 +94,9 @@ Catch.species.dataset=read.csv(handl_OneDrive("Analyses/Population dynamics/PSA/
 
 # Define global parameters ---------------
 First.Run.SSMSE=FALSE                  # set to TRUE to generate OMs, Folders, etc
-First.Run.RatPack=FALSE                # don't run as it will over right OPD and HSE files  
+run.SSMSE=FALSE                        # set to TRUE to run SSMSE
+First.Run.RatPack=FALSE                # don't run as it will over right OPD and HSE files
+run.RatPack=FALSE                        # set to TRUE to run RatPack
 niters <- 2                            # number of simulations per scenario (100)
 Proj.years=10                          # number of projected years (25)
 Proj.years.obs=seq(1,Proj.years,by=5)  # sampled years in the projected period
@@ -203,7 +205,7 @@ if(First.Run.SSMSE)
 
 
 #2. Execute SSMSE
-if(!First.Run.SSMSE)
+if(run.SSMSE)
 {
   SSMSE_outputs=fn.create.list(Keep.species)
   for(i in 1:N.sp)
@@ -234,11 +236,12 @@ if(!First.Run.SSMSE)
 # Run RatPack loop over each species-scenario combination --------------
 
 #1. Create RatPack folders and files  
-rat.pack.folders=c('inputs','outputs','PGMSY','Results','Stock_Synthesis','Stock_Synthesis3.30base')
-rat.pack.files=c('run.bat','Whiskery_test.proj','Whiskery.OPD','Whiskery.HSE')
-
 if(First.Run.RatPack)
 {
+  #original files
+  rat.pack.folders=c('inputs','outputs','PGMSY','Results','Stock_Synthesis','Stock_Synthesis3.30base')
+  rat.pack.files=c('run.bat','Whiskery_test.proj','Whiskery.OPD','Whiskery.HSE')
+  
   tic()
   for(i in 1:N.sp)
   {
@@ -303,7 +306,7 @@ if(First.Run.RatPack)
 }
 
 #2. Execute RatPack 
-if(!First.Run.RatPack)
+if(run.RatPack)
 {
   tic()
   for(i in 1:N.sp)
@@ -325,9 +328,7 @@ if(!First.Run.RatPack)
 
 
 
-# Report outputs ----------------------------------------------------------
-
-#Display MSE scenarios tested
+# Report tested MSE scenarios  ----------------------------------------------------------
 write.csv(do.call(rbind,SCENARIOS)%>%
             dplyr::select(-c(Ref.point,EM,Assessment.path))%>%
             relocate(Species)%>%
@@ -360,3 +361,94 @@ for(i in 1:N.sp)
   Tab.HCR.scens[[i]]=do.call(rbind,dd)
 }
 write.csv(do.call(rbind,Tab.HCR.scens),paste0(outs.path,'/Table 1.Scenarios_HCR_values.csv'),row.names = F)
+
+
+# Report SSMSE outputs  ----------------------------------------------------------
+if(run.SSMSE)
+{
+  tic()
+  for(i in 1:N.sp)
+  {
+    Scenarios=SCENARIOS[[i]]
+    for(s in 1:nrow(Scenarios))
+    {
+      print(paste('SSMSE Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      
+    } #end s
+  } #end i
+  toc()
+}
+# Report Ratpack outputs  ----------------------------------------------------------
+if(run.RatPack)
+{
+  outputs_RatPack=fn.create.list(Keep.species)
+  tic()
+  for(i in 1:N.sp)
+  {
+    Scenarios=SCENARIOS[[i]]
+    aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
+    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]
+    Store=fn.create.list(Scenarios$Scenario)
+    for(s in 1:nrow(Scenarios))
+    {
+      print(paste('RatPack Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
+      spi=str_remove(Keep.species[i],' shark')
+      
+      #Bring in OM and EM results
+      OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
+                          skip=1, header=TRUE, fill=TRUE)
+      EMOut <- read.table(paste(sp_path_scen,'Debug',paste0(spi,'trace_plot.dat'),sep='/'), 
+                          header=TRUE, fill=TRUE)
+      
+      #1. Calculate performance indicators
+      Perf.ind=c(Stock.stat1='SSBcurrent',Stock.stat2='Depletion',Stock.stat3='Recruits',
+                 Catch='TotCatch',Catch1='RBC')
+      Perf.ind.list=fn.create.list(Perf.ind)
+      for(p in 1:length(Perf.ind))
+      {
+        Perf.ind.list[[p]]=fn.percentiles(d=OMOut,grouping='Year',var=Perf.ind[[p]])%>%mutate(PerfInd=Perf.ind[[p]])
+      }
+      
+      #1. Spawning stock biomass
+      OMSSBquant=fn.percentiles(d=OMOut,
+                                grouping='Year',
+                                var='SSBcurrent')
+      EMSSBquant=fn.percentiles(d=EMOut %>%
+                                    filter(RBCyear==2022 | RBCyear==2025) %>%   #ACA, why these years??
+                                    group_by(RBCyear) %>%
+                                    pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
+                                                 names_to="Year", values_to="estSSB", names_prefix="X"),
+                                grouping=c('RBCyear','Year'),
+                                var='estSSB')
+      
+      #plot trajectories
+      RBCyears <- sort(unique(EMSSBquant$RBCyear))
+      EMSSBquant$Year <- as.numeric(EMSSBquant$Year)
+      EMSSBquant$RBCyear <- factor(EMSSBquant$RBCyear, level=RBCyears)
+      EMSSBquant <- rename(EMSSBquant, Assessment=RBCyear)
+      ggplot(OMSSBquant, aes(x=Year)) +
+        geom_ribbon(aes(ymin=ymin, ymax=ymax), fill="gray", alpha=0.50) +
+        geom_line(aes(y=middle)) +
+        labs(y="SSB") +
+        geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
+        geom_ribbon(data=EMSSBquant,aes(ymin=lower, ymax=upper, fill=Assessment), alpha=0.20) +
+        scale_color_manual(values=rev(c("#08306b","cadetblue")))+ expand_limits(y=0)
+      ggsave(paste(sp_path_scen,'outputs','SSB_OM_EM.tiff',sep='/'),width = 6,height = 6,compression = "lzw")
+      
+      Store[[s]]=rbind(OMSSBquant%>%
+                         data.frame%>%
+                         mutate(Assessment='OM')%>%
+                         relocate(Assessment),
+                       EMSSBquant%>%
+                         data.frame)%>%
+                  mutate(Species=Keep.species[i],
+                         Scenario=Scenarios$Scenario[s])
+    } #end s
+    outputs_RatPack[[i]]=Store
+  } #end i
+  toc()
+  
+  outputs_RatPack=do.call(rbind,outputs_RatPack)
+  
+}

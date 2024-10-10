@@ -378,6 +378,7 @@ fn.copy.RatPack.files=function(inpath,sp,outpath,file.name)
   if(grepl(paste(c('.proj','.OPD','HSE'),collapse='|'),file.name)) outpath1=paste(outpath1,'inputs',sep='/')
   file.name1=str_replace(file.name,'Whiskery',str_remove(sp, " shark"))
   outfile <- paste(outpath1, file.name1, sep = "/")
+  if(file.exists(outfile)) file.remove(outfile)
   zz <- file(outfile, open = "at")
   sink(zz)
   for(x in 1:length(mylist)) writeLines(paste(mylist[[x]],collapse=' '),con = zz) 
@@ -417,6 +418,7 @@ fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
   n.surveys=nrow(dat$fleetinfo%>%filter(grepl('Survey',fleetname)))
   LISTA$Number.of.surveys=n.surveys 
   LISTA$Selectivity.pattern=cntrl$size_selex_types$Pattern
+  LISTA$Selectivity.pattern=ifelse(LISTA$Selectivity.pattern==15,5,LISTA$Selectivity.pattern)   #doesn't work with 15    
   LISTA$Mirrored.fleet=cntrl$size_selex_types$Special
   LISTA$Selectivity.pars=fn.right.format(x=cntrl$size_selex_parms,var='INIT')%>%dplyr::select(-fleet)
   LISTA$Selectivity.phase=fn.right.format(x=cntrl$size_selex_parms,var='PHASE')%>%dplyr::select(-fleet)
@@ -658,4 +660,22 @@ fn.run.RatPack.exe=function(where.exe,exe.name)
 {
   setwd(where.exe)
   system(paste(shQuote(exe.name)))
+}
+
+
+
+# Report outputs -----------------------------------------------------------------
+fn.percentiles=function(d,grouping,var)
+{
+  return(d%>%
+           group_by_at(grouping)%>%
+           summarise(per_5=quantile(!!as.name(var), probs=0.05, na.rm=TRUE),
+                     per_95=quantile(!!as.name(var), probs=0.95, na.rm=TRUE),
+                     
+                     
+                     ymin=quantile(!!as.name(var), probs=0.10, na.rm=TRUE),
+                     lower=quantile(!!as.name(var), probs=0.25, na.rm=TRUE),
+                     middle=quantile(!!as.name(var), probs=0.5, na.rm=TRUE),
+                     upper=quantile(!!as.name(var), probs=0.75, na.rm=TRUE),
+                     ymax=quantile(!!as.name(var), probs=0.9, na.rm=TRUE)))
 }
