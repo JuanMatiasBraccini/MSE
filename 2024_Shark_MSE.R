@@ -38,7 +38,9 @@ library(tidyverse)
 library(readxl)
 library(doParallel)
 #library(Hmisc)
-.libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
+set.lib.path=TRUE
+if(grepl('4.0.3',version[['version.string']])) set.lib.path=FALSE
+if(set.lib.path).libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
 # Set up paths and source functions  ---------------
 fn.user=function(x1,x2)paste(x1,Sys.getenv("USERNAME"),x2,sep='/')
 if(!exists('handl_OneDrive')) source(fn.user(x1='C:/Users',

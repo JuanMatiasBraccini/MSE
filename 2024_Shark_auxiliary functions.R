@@ -50,14 +50,19 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   
   #3. Bring in OM and update for scenarios not tested during the Assessment 
   Report=SS_output(scen_path_EM,covar=F,forecast=F,readwt=F,verbose = F, printstats=F) 
+  
   fore.OM <- r4ss::SS_readforecast(file.path(scen_path_OM, "forecast.ss"),verbose = FALSE)
+  
   dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
   dat.new <- r4ss::SS_readdat(file.path(scen_path_OM, "data_echo.ss_new"),verbose = FALSE)
-  control <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ctl"),verbose = FALSE)
-  control.new <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ss_new"),verbose = FALSE)
-  
   dat.EM <- r4ss::SS_readdat(file.path(scen_path_EM, "data.dat"),verbose = FALSE)
-  control.EM <- r4ss::SS_readctl(file.path(scen_path_EM, "control.ctl"),verbose = FALSE)
+  
+  control <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ctl"),verbose = FALSE,
+                              datlist=file.path(scen_path_OM, "data_echo.ss_new"))
+  control.new <- r4ss::SS_readctl(file.path(scen_path_OM, "control.ss_new"),verbose = FALSE,
+                                  datlist=file.path(scen_path_OM, "data_echo.ss_new"))
+  control.EM <- r4ss::SS_readctl(file.path(scen_path_EM, "control.ctl"),verbose = FALSE,
+                                 datlist=file.path(scen_path_EM, "data_echo.ss_new"))
   
   par.file <- SS_readRatPack.object(file.path(scen_path_OM,'ss.par'))
   
@@ -111,6 +116,62 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   }
   
   #Nathan Vaughan suggestions
+  id.F.fleet=which(dat$fleetinfo$fleetname=='F.series_Southern.shark_1')  #remove F series
+  if(length(id.F.fleet)>0)
+  {
+    fore.OM$ForeCatch=fore.OM$ForeCatch%>%filter(!Fleet==id.F.fleet)
+    
+    dat$Nfleets=dat$Nfleets-1
+    dat$Nfleet=dat$Nfleet-1
+    dat$fleetinfo=dat$fleetinfo[-id.F.fleet,]
+    dat$fleetinfo1=dat$fleetinfo1[,-id.F.fleet]
+    dat$fleetinfo2=dat$fleetinfo2[,-id.F.fleet]
+    dat$fleetnames=dat$fleetnames[-id.F.fleet]
+    dat$surveytiming=dat$surveytiming[-id.F.fleet]
+    dat$units_of_catch=dat$units_of_catch[-id.F.fleet]
+    dat$areas=dat$areas[-id.F.fleet]
+    dat$catch=dat$catch%>%filter(!fleet==id.F.fleet)
+    dat$CPUEinfo=dat$CPUEinfo[-id.F.fleet,]
+    dat$CPUE=dat$CPUE%>%filter(!index==id.F.fleet)
+    dat$len_info=dat$len_info[-id.F.fleet,]
+    
+    dat.new$Nfleets=dat.new$Nfleets-1
+    dat.new$Nfleet=dat.new$Nfleet-1
+    dat.new$fleetinfo=dat.new$fleetinfo[-id.F.fleet,]
+    dat.new$fleetinfo1=dat.new$fleetinfo1[,-id.F.fleet]
+    dat.new$fleetinfo2=dat.new$fleetinfo2[,-id.F.fleet]
+    dat.new$fleetnames=dat.new$fleetnames[-id.F.fleet]
+    dat.new$surveytiming=dat.new$surveytiming[-id.F.fleet]
+    dat.new$units_of_catch=dat.new$units_of_catch[-id.F.fleet]
+    dat.new$areas=dat.new$areas[-id.F.fleet]
+    dat.new$catch=dat.new$catch%>%filter(!fleet==id.F.fleet)
+    dat.new$CPUEinfo=dat.new$CPUEinfo[-id.F.fleet,]
+    dat.new$CPUE=dat.new$CPUE%>%filter(!index==id.F.fleet)
+    dat.new$len_info=dat.new$len_info[-id.F.fleet,]
+    
+    dat.EM=dat
+    
+    control$fleetnames=control$fleetnames[-id.F.fleet]
+    control$Nfleets=control$Nfleets-1
+    control$Q_options=control$Q_options%>%filter(!fleet==id.F.fleet)
+    control$Q_parms=control$Q_parms[-grep('F.series',rownames(control$Q_parms)),]
+    control$size_selex_types=control$size_selex_types[-id.F.fleet,]
+    control$age_selex_types=control$age_selex_types[-id.F.fleet,]
+    control$lambdas=control$lambdas%>%filter(!fleet==id.F.fleet)  
+    control$N_lambdas=control$N_lambdas-1  
+      
+    control.new$fleetnames=control.new$fleetnames[-id.F.fleet]
+    control.new$Nfleets=control.new$Nfleets-1
+    control.new$Q_options=control.new$Q_options%>%filter(!fleet==id.F.fleet)
+    control.new$Q_parms=control.new$Q_parms[-grep('F.series',rownames(control.new$Q_parms)),]
+    control.new$size_selex_types=control.new$size_selex_types[-id.F.fleet,]
+    control.new$age_selex_types=control.new$age_selex_types[-id.F.fleet,]
+    control.new$lambdas=control.new$lambdas%>%filter(!fleet==id.F.fleet)  
+    control.new$N_lambdas=control.new$N_lambdas-1 
+    
+    control.EM=control
+  }
+  
   par.file[[match("# Fcast_recruitments:",par.file)+1]]=" 0.00000000000 0.00000000000"
   control$recdev_early_start=control.new$recdev_early_start=control.EM$recdev_early_start=1922 
   control$recdev_early_phase=control.new$recdev_early_phase=control.EM$recdev_early_phase=3
@@ -197,6 +258,9 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   
     #bring in forecast file
   fore <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss"),verbose = FALSE) 
+  if(length(id.F.fleet)>0) fore$ForeCatch=fore$ForeCatch%>%filter(!Fleet==id.F.fleet)
+  
+  
   fore$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
   fore$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
   fore$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
@@ -209,6 +273,7 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   r4ss::SS_writeforecast(fore, scen_path_EM, verbose = FALSE, overwrite = TRUE)
   
   fore_new.EM <- r4ss::SS_readforecast(file.path(scen_path_EM, "forecast.ss_new"),verbose = FALSE)
+  if(length(id.F.fleet)>0) fore_new.EM$ForeCatch=fore_new.EM$ForeCatch%>%filter(!Fleet==id.F.fleet)
   fore_new.EM$MSY <- 2 # 1, FSPR; 2 FMSY; 3, FBtarget
   fore_new.EM$Forecast <- 2 # 1, use FSPR; 2, use FMSY; 3, F
   fore_new.EM$Btarget <- BTarget  #value of relative biomass aimed to be achieved during forecast
@@ -236,7 +301,9 @@ fn.run.SSSMSE=function(sp_path_assessment,Scen,sp_path_OM,sp_path_EM,sp_path_out
   scen_path_OM=paste(sp_path_OM,Scen$Scenario,sep='/')
   scen_path_EM=paste(sp_path_EM,Scen$Scenario,sep='/')
   dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
-  control <- r4ss::SS_readctl(file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "control.ctl"),verbose = FALSE)
+  control <- r4ss::SS_readctl(file=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "control.ctl"),
+                              verbose = FALSE,
+                              datlist=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "data_echo.ss_new"))
   
   current.fleets=grep(paste(cur.fleets,collapse='|'),dat$fleetinfo$fleetname)
   datfile_path=file.path(scen_path_OM, "data.dat")
@@ -331,7 +398,7 @@ fn.run.SSSMSE=function(sp_path_assessment,Scen,sp_path_OM,sp_path_EM,sp_path_out
 
   
   #3. run SSMSE
-  .libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
+  if(set.lib.path) .libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
   out <- SSMSE::run_SSMSE(scen_name_vec = Scen$Scenario,      # name of the scenario
                           out_dir_scen_vec = sp_path_out,     # directory in which to run the scenario 
                           iter_vec = Nsims,
@@ -388,7 +455,7 @@ fn.copy.RatPack.files=function(inpath,sp,outpath,file.name)
 fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
-  cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE)
+  cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE,datlist=file.path(SS.path, "data_echo.ss_new"))
   Report=SS_output(SS.path,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)
   
   LISTA=list()
@@ -445,7 +512,7 @@ fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
 fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
-  cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE)
+  cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE, datlist=file.path(SS.path, "data_echo.ss_new"))
   Report=SS_output(SS.path,covar=F,forecast=F,readwt=F,verbose = F, printstats=F)
   
   #Update OM when Scenario info for scenarios not tested during the Assessment 
