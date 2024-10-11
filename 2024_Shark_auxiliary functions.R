@@ -8,6 +8,7 @@ fn.copy.file=function(x,from,to)
     invisible(file.copy(from=paste0(from,"/", x), to=to, recursive = TRUE))
   }
 }
+fn.file.remove=function(file) if(file.exists(file))file.remove(file) 
 fn.get=function(parname,from) from[match(parname,rownames(from)),]$INIT
 fn.create.list=function(vec) sapply(vec,function(x) NULL)   
 fn.right.format=function(x,var)
@@ -27,8 +28,7 @@ fn.right.format=function(x,var)
            mutate(P_7=0,P_8=0))
 }
 # SSMSE -----------------------------------------------------------------
-fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
-                               proj.yrs,block.pattern)
+fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,block.pattern)
 {
   #1. Bring in Assessment model
   Assessment.location=paste(sp_path_assessment,Scen$Assessment.path,sep='/')
@@ -41,9 +41,11 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   
   #2. Create OM and EM based on Assessment model
   scen_path_OM=paste(sp_path_OM,Scen$Scenario,sep='/')
-  fn.create.folder(scen_path_OM)
   scen_path_EM=paste(sp_path_EM,Scen$Scenario,sep='/')
+  fn.create.folder(scen_path_OM)
   fn.create.folder(scen_path_EM)
+  unlink(paste0(scen_path_OM,"/*"))
+  unlink(paste0(scen_path_EM,"/*"))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_OM, recursive = TRUE)))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_EM, recursive = TRUE)))
   
@@ -70,33 +72,48 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   {
     if(Scen$Difference=='NSF.logis.sel')
     {
-      control$size_selex_types[match('Northern.shark',row.names(control$size_selex_types)),'Pattern']=1
+      control$size_selex_types[match('Northern.shark',row.names(control$size_selex_types)),c('Pattern','Male')]=c(1,0)
+      control.new$size_selex_types=control$size_selex_types
+      
       id=match(c("SizeSel_P_3_Northern.shark(1)","SizeSel_P_4_Northern.shark(1)",
-                 "SizeSel_P_5_Northern.shark(1)","SizeSel_P_6_Northern.shark(1)"),
+                 "SizeSel_P_5_Northern.shark(1)","SizeSel_P_6_Northern.shark(1)",
+                 "SizeSel_PMalOff_1_Northern.shark(1)","SizeSel_PMalOff_2_Northern.shark(1)",
+                 "SizeSel_PMalOff_3_Northern.shark(1)","SizeSel_PMalOff_4_Northern.shark(1)",
+                 "SizeSel_PMalOff_5_Northern.shark(1)"),
                row.names(control$size_selex_parms))
       control$size_selex_parms=control$size_selex_parms[-id,]
+      control.new$size_selex_parms=control.new$size_selex_parms[-id,]
+      
       id=match('SizeSel_P_1_Northern.shark(1)',row.names(control$size_selex_parms))
       aaa=control$MG_parms[match('Mat50%_Fem_GP_1',row.names(control$MG_parms)),'INIT']
       control$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(aaa*.8,aaa*1.2,aaa,aaa)
+      control.new$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(aaa*.8,aaa*1.2,aaa,aaa)
+      
       id=match('SizeSel_P_2_Northern.shark(1)',row.names(control$size_selex_parms))
       control$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(1,20,10,10)
+      control.new$size_selex_parms[id,c('LO','HI','INIT','PRIOR')]=c(1,20,10,10)
+      
     }
     if(Scen$Difference=='lower.steepness')
     {
       control$SR_parms[match('SR_BH_steep',row.names(control$SR_parms)),c('LO','INIT')]=c(0.25,Scen$Difference.value)
+      control.new$SR_parms[match('SR_BH_steep',row.names(control$SR_parms)),c('LO','INIT')]=c(0.25,Scen$Difference.value)
     }
     if(Scen$Difference=='M.contstant')
     {
       nn=ncol(control$natM)
       control$natM[1,]=rep(Scen$Difference.value,nn)
       control$natM[2,]=rep(Scen$Difference.value,nn)
+      control.new$natM[1,]=rep(Scen$Difference.value,nn)
+      control.new$natM[2,]=rep(Scen$Difference.value,nn)
     }
     if(Scen$Difference=='rep.cycle')
     {
-      control$MG_parms[match('Eggs_alpha_Fem_GP_1',row.names(control$MG_parms)),'INIT']=
-                control$MG_parms[match('Eggs_alpha_Fem_GP_1',row.names(control$MG_parms)),'INIT']*Scen$Difference.value
-      control$MG_parms[match('Eggs_beta_Fem_GP_1',row.names(control$MG_parms)),'INIT']=
-                control$MG_parms[match('Eggs_beta_Fem_GP_1',row.names(control$MG_parms)),'INIT']*Scen$Difference.value
+      control$MG_parms[grep('Eggs',row.names(control$MG_parms)),'INIT']=
+              control$MG_parms[grep('Eggs',row.names(control$MG_parms)),'INIT']*Scen$Difference.value
+      control.new$MG_parms[grep('Eggs',row.names(control.new$MG_parms)),'INIT']=
+        control.new$MG_parms[grep('Eggs',row.names(control.new$MG_parms)),'INIT']*Scen$Difference.value
+
 
     }
     if(Scen$Difference=='IUU')
@@ -104,6 +121,7 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
       id=match('Other',dat$fleetinfo$fleetname)
       a=dat$catch%>%filter(fleet==id)
       dat$catch=dat$catch%>%filter(!fleet==id)
+      dat.new$catch=dat.new$catch%>%filter(!fleet==id)
       a=left_join(a,Indoktch%>%
                     dplyr::select(Year,catch)%>%rename(catch1=catch),
                   by=c('year'='Year'))%>%
@@ -111,7 +129,8 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
                          catch=catch-catch1,
                          catch=catch+(catch1*Scen$Difference.value))%>%
                   dplyr::select(-catch1)
-      dat$catch=rbind(a,dat$catch)%>%arrange(fleet,year,seas) 
+      dat$catch=rbind(a,dat$catch)%>%arrange(fleet,year,seas)
+      dat.new$catch=rbind(a,dat.new$catch)%>%arrange(fleet,year,seas)
     }
   }
   
@@ -149,7 +168,20 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
     dat.new$CPUE=dat.new$CPUE%>%filter(!index==id.F.fleet)
     dat.new$len_info=dat.new$len_info[-id.F.fleet,]
     
-    dat.EM=dat
+    dat.EM$Nfleets=dat.EM$Nfleets-1
+    dat.EM$Nfleet=dat.EM$Nfleet-1
+    dat.EM$fleetinfo=dat.EM$fleetinfo[-id.F.fleet,]
+    dat.EM$fleetinfo1=dat.EM$fleetinfo1[,-id.F.fleet]
+    dat.EM$fleetinfo2=dat.EM$fleetinfo2[,-id.F.fleet]
+    dat.EM$fleetnames=dat.EM$fleetnames[-id.F.fleet]
+    dat.EM$surveytiming=dat.EM$surveytiming[-id.F.fleet]
+    dat.EM$units_of_catch=dat.EM$units_of_catch[-id.F.fleet]
+    dat.EM$areas=dat.EM$areas[-id.F.fleet]
+    dat.EM$catch=dat.EM$catch%>%filter(!fleet==id.F.fleet)
+    dat.EM$CPUEinfo=dat.EM$CPUEinfo[-id.F.fleet,]
+    dat.EM$CPUE=dat.EM$CPUE%>%filter(!index==id.F.fleet)
+    dat.EM$len_info=dat.EM$len_info[-id.F.fleet,]
+    
     
     control$fleetnames=control$fleetnames[-id.F.fleet]
     control$Nfleets=control$Nfleets-1
@@ -169,7 +201,16 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
     control.new$lambdas=control.new$lambdas%>%filter(!fleet==id.F.fleet)  
     control.new$N_lambdas=control.new$N_lambdas-1 
     
-    control.EM=control
+    
+    control.EM$fleetnames=control.EM$fleetnames[-id.F.fleet]
+    control.EM$Nfleets=control.EM$Nfleets-1
+    control.EM$Q_options=control.EM$Q_options%>%filter(!fleet==id.F.fleet)
+    control.EM$Q_parms=control.EM$Q_parms[-grep('F.series',rownames(control.EM$Q_parms)),]
+    control.EM$size_selex_types=control.EM$size_selex_types[-id.F.fleet,]
+    control.EM$age_selex_types=control.EM$age_selex_types[-id.F.fleet,]
+    control.EM$lambdas=control.EM$lambdas%>%filter(!fleet==id.F.fleet)  
+    control.EM$N_lambdas=control.EM$N_lambdas-1  
+    
   }
   
   par.file[[match("# Fcast_recruitments:",par.file)+1]]=" 0.00000000000 0.00000000000"
@@ -179,7 +220,16 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   control$time_vary_auto_generation[control$time_vary_auto_generation<1]=1
   control.new$time_vary_auto_generation[control.new$time_vary_auto_generation<1]=1
   control.EM$time_vary_auto_generation[control.EM$time_vary_auto_generation<1]=1
-  if('CPUE'%in%names(dat)) dat$CPUE$seas=dat.new$CPUE$seas=dat.EM$CPUE$seas=7
+  if('CPUE'%in%names(dat))
+  {
+    dat$CPUE$seas=dat.new$CPUE$seas=dat.EM$CPUE$seas=7
+    control$Q_options$float=0
+    control$Q_parms$PHASE=2
+    control.new$Q_options$float=0
+    control.new$Q_parms$PHASE=2
+    control.EM$Q_options$float=0
+    control.EM$Q_parms$PHASE=2
+  }
   if(!is.null(block.pattern))
   {
     iid=match(block.pattern,rownames(Report$estimated_non_dev_parameters))
@@ -214,7 +264,7 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
       
     }
   }
-   file.remove(file.path(scen_path_OM,'ss.par'))
+  file.remove(file.path(scen_path_OM,'ss.par'))
   zz <- file(file.path(scen_path_OM,'ss.par'), open = "at")
   sink(zz)
   for(x in 1:length(par.file)) writeLines(paste(par.file[[x]],collapse=' '),con = zz) 
@@ -249,8 +299,8 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   SSB_MSY=dum[grep("SSB_MSY",dum$Label),'Value']
   SSB_MSY.over.SSB_Virgin=SSB_MSY/SSB_Virgin
   Min.bio=0.2
-  if(scen$Limit==0.4) Min.bio=0.15
-  if(scen$Limit==0.6) Min.bio=0.22
+  if(Scen$Limit==0.4) Min.bio=0.15
+  if(Scen$Limit==0.6) Min.bio=0.22
   BLimit=round(max(Min.bio,Scen$Limit*SSB_MSY.over.SSB_Virgin),2)   
   BThreshold=round(Scen$Threshold*SSB_MSY.over.SSB_Virgin,2)
   BTarget=round(Scen$Target*SSB_MSY.over.SSB_Virgin,2)
@@ -284,10 +334,14 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,
   fore_new.EM$Nforecastyrs=1
   fore_new.EM=fore_new.OM[-match('ForeCatch',names(fore_new.EM))]
   r4ss::SS_writeforecast(fore_new.EM, scen_path_EM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
-  #if(file.exists(paste(scen_path_EM,'forecast.ss_new',sep='/')))file.remove(file.path(scen_path_EM, "forecast.ss_new")) # to make sure it is not used.
   
-  
-  #6. Rename some files (doesn't run otherwise)
+  #6. Remove certain files to make sure they are not used.
+  fn.file.remove(file=file.path(scen_path_EM, "forecast.ss_new"))
+  fn.file.remove(file=file.path(scen_path_EM, "control.ss_new"))
+  fn.file.remove(file=file.path(scen_path_EM, "data.ss_new"))
+  fn.file.remove(file=file.path(scen_path_EM, "starter.ss_new"))
+
+  #7. Rename some files (doesn't run otherwise)
    fn.rename(paste(scen_path_OM,'data_echo.ss_new',sep='/'), paste(scen_path_OM,'data.ss_new',sep='/'))
    fn.rename(paste(scen_path_EM,'data_echo.ss_new',sep='/'), paste(scen_path_EM,'data.ss_new',sep='/'))
    fn.rename(paste(scen_path_OM,'ss_win.log',sep='/'), paste(scen_path_OM,'ss.log',sep='/'))

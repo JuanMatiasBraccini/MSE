@@ -11,9 +11,8 @@
 #           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
 #                    from input_HSE.txt and input_OPD.txt. Only do it for S1, then copy from S1 to other Scenarios and
 #                    then manually update relevant parts only.
-#           SSMSE:  For the OM and EM, Copy '#_Q_setup' and '#_Q_parms(if_any)' from 'control.ss_new' to 'control.ss'
-#                   For the OM and EM and time changing parameters (i.e., blocks in Q or Selectivity). Copy, 
-#                   'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' (check 'control_timevary_XX.csv')
+#           SSMSE:   For the OM and EM and time changing parameters (i.e., blocks in Q or Selectivity). Copy, 
+#                       'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' (check 'control_timevary_XX.csv')
 
 # SSMSE reference material:
 #     https://nmfs-fish-tools.github.io/SSMSE/manual
@@ -197,8 +196,7 @@ if(First.Run.SSMSE)
       {
         Indoktch=Catch.species.dataset%>%filter(Name==Keep.species[i] & Data.set=="Indonesia")
       }
-      fn.create.SSMSE.files(sp_path_assessment, sp_path_OM, sp_path_EM, Scen=Scenarios[s,], 
-                            proj.yrs=Proj.years, block.pattern=BLK.pat[[i]])
+      fn.create.SSMSE.files(sp_path_assessment, sp_path_OM, sp_path_EM, Scen=Scenarios[s,],block.pattern=BLK.pat[[i]])
     } #end s
     rm(sp_path_assessment,sp_path_OM,sp_path_EM,Scenarios)
   } #end i
