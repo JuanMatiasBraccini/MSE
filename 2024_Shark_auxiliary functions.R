@@ -48,7 +48,7 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,blo
   unlink(paste0(scen_path_EM,"/*"))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_OM, recursive = TRUE)))
   invisible(lapply(list.of.files, function(x) file.copy(paste(Assessment.location, x, sep = "/"), to = scen_path_EM, recursive = TRUE)))
-  
+ 
   
   #3. Bring in OM and update for scenarios not tested during the Assessment 
   Report=SS_output(scen_path_EM,covar=F,forecast=F,readwt=F,verbose = F, printstats=F) 
@@ -214,7 +214,7 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,blo
   }
   
   par.file[[match("# Fcast_recruitments:",par.file)+1]]=" 0.00000000000 0.00000000000"
-  control$recdev_early_start=control.new$recdev_early_start=control.EM$recdev_early_start=1922 
+  control$recdev_early_start=control.new$recdev_early_start=control.EM$recdev_early_start=1922 #dat$styr-dat$Nages 
   control$recdev_early_phase=control.new$recdev_early_phase=control.EM$recdev_early_phase=3
   control$Fcast_recr_phase=control.new$Fcast_recr_phase=control.EM$Fcast_recr_phase=-2
   control$time_vary_auto_generation[control$time_vary_auto_generation<1]=1
@@ -335,12 +335,14 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,blo
   fore_new.EM=fore_new.OM[-match('ForeCatch',names(fore_new.EM))]
   r4ss::SS_writeforecast(fore_new.EM, scen_path_EM, verbose = FALSE,file = "forecast.ss_new", overwrite = TRUE)
   
+  
   #6. Remove certain files to make sure they are not used.
   fn.file.remove(file=file.path(scen_path_EM, "forecast.ss_new"))
   fn.file.remove(file=file.path(scen_path_EM, "control.ss_new"))
   fn.file.remove(file=file.path(scen_path_EM, "data.ss_new"))
   fn.file.remove(file=file.path(scen_path_EM, "starter.ss_new"))
 
+  
   #7. Rename some files (doesn't run otherwise)
    fn.rename(paste(scen_path_OM,'data_echo.ss_new',sep='/'), paste(scen_path_OM,'data.ss_new',sep='/'))
    fn.rename(paste(scen_path_EM,'data_echo.ss_new',sep='/'), paste(scen_path_EM,'data.ss_new',sep='/'))
@@ -348,16 +350,30 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,blo
    fn.rename(paste(scen_path_EM,'ss_win.log',sep='/'), paste(scen_path_EM,'ss.log',sep='/'))
 }
 
-fn.run.SSSMSE=function(sp_path_assessment,Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,proj.yrs,
+fn.run.SS=function(where.inputs,where.exe,args=FALSE)
+{
+  wd_orig=getwd()
+  setwd(where.inputs)
+  if(!isFALSE(args)) system(paste(shQuote(where.exe),args))else
+  {
+    system(paste(shQuote(where.exe)))
+  }
+  setwd(wd_orig)
+}
+
+fn.run.SSSMSE=function(Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,proj.yrs,
                        Neff.future,proj.yrs.with.obs,yrs.between.assess,cur.fleets,future.cv,specify.future.OM,
                        apply.future.meanbodywt)
 {
   scen_path_OM=paste(sp_path_OM,Scen$Scenario,sep='/')
   scen_path_EM=paste(sp_path_EM,Scen$Scenario,sep='/')
   dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
-  control <- r4ss::SS_readctl(file=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "control.ctl"),
+  control <- r4ss::SS_readctl(file=file.path(scen_path_OM, "control.ctl"),
                               verbose = FALSE,
-                              datlist=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "data_echo.ss_new"))
+                              datlist=file.path(scen_path_OM, "data_echo.ss_new"))
+#  control <- r4ss::SS_readctl(file=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "control.ctl"),
+#                              verbose = FALSE,
+#                              datlist=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "data_echo.ss_new"))
   
   current.fleets=grep(paste(cur.fleets,collapse='|'),dat$fleetinfo$fleetname)
   datfile_path=file.path(scen_path_OM, "data.dat")
@@ -382,7 +398,8 @@ fn.run.SSSMSE=function(sp_path_assessment,Scen,sp_path_OM,sp_path_EM,sp_path_out
                                Seas = unique(dat$CPUE$seas),
                                FltSvy = unique(dat$CPUE$index), 
                                SE=future.cv)%>%
-                    filter(FltSvy%in%current.fleets)
+                    filter(FltSvy%in%current.fleets)%>%
+                    arrange(Yr,FltSvy)
   }
     
     #length comps
@@ -396,7 +413,8 @@ fn.run.SSSMSE=function(sp_path_assessment,Scen,sp_path_OM,sp_path_EM,sp_path_out
                                    Sex = 1:2, 
                                    Part = unique(dat$lencomp$Part),
                                    Nsamp = Neff.future)%>%
-                        filter(FltSvy%in%current.fleets)
+                        filter(FltSvy%in%current.fleets)%>%
+      arrange(Yr,FltSvy,Sex)
   }
   
     #mean body weight

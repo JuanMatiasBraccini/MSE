@@ -11,8 +11,9 @@
 #           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
 #                    from input_HSE.txt and input_OPD.txt. Only do it for S1, then copy from S1 to other Scenarios and
 #                    then manually update relevant parts only.
-#           SSMSE:   For the OM and EM and time changing parameters (i.e., blocks in Q or Selectivity). Copy, 
-#                       'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' (check 'control_timevary_XX.csv')
+#           SSMSE:   In the first run, create files and re fit OM
+#                    For the OM and EM if there are time changing parameters (i.e., blocks in Q or Selectivity), copy, 
+#                       'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' 
 
 # SSMSE reference material:
 #     https://nmfs-fish-tools.github.io/SSMSE/manual
@@ -95,6 +96,7 @@ Catch.species.dataset=read.csv(handl_OneDrive("Analyses/Population dynamics/PSA/
 
 # Define global parameters ---------------
 First.Run.SSMSE=FALSE                  # set to TRUE to generate OMs, Folders, etc
+re.fit.OM=FALSE                        # set to TRU to re fit OM following changes 
 run.SSMSE=FALSE                        # set to TRUE to run SSMSE
 First.Run.RatPack=FALSE                # don't run as it will over right OPD and HSE files
 run.RatPack=FALSE                        # set to TRUE to run RatPack
@@ -203,8 +205,27 @@ if(First.Run.SSMSE)
   toc()
 }
 
+#2. Re fit model to implement Scenario changes to OM and have all MSE inputs right
+#note: before running this, must make manual changes to OM (block patterns, etc)
+if(re.fit.OM)
+{
+  for(i in 1:N.sp)
+  {
+    sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
+    Scenarios=SCENARIOS[[i]]
+    for(s in 1:nrow(Scenarios))
+    {
+      print(paste('SSMSE re fit OM for',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      fn.run.SS(where.inputs=paste(sp_path_OM,Scenarios$Scenario[s],sep='/'),
+                where.exe=handl_OneDrive('SS3/ss_win.exe'),
+                args="-nohess")
+    }
 
-#2. Execute SSMSE
+  }
+}
+
+
+#3. Execute SSMSE
 if(run.SSMSE)
 {
   SSMSE_outputs=fn.create.list(Keep.species)
@@ -213,14 +234,13 @@ if(run.SSMSE)
     dumy.out=fn.create.list(Scenarios$Scenario)
     
     Scenarios=SCENARIOS[[i]]  
-    sp_path_assessment=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',sep='/')
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
     sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
     sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
-      dumy.out[[s]]=fn.run.SSSMSE(sp_path_assessment,Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
+      dumy.out[[s]]=fn.run.SSSMSE(Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
                                   Nsims=niters, Neff.future=Effective.pop.size.future,
                                   proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
                                   yrs.between.assess=Proj.years.between.ass,
