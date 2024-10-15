@@ -581,7 +581,7 @@ fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
   LISTA$allocation.of.fleets.to.regions=as.data.frame(matrix(rep(1,n.fleets+n.surveys),ncol=1))  
   return(LISTA)
 }
-fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
+fun.populate.OPD=function(i,SS.path,Scen,Neff.future,Nregions)
 {
   dat = r4ss::SS_readdat(file.path(SS.path,"data.dat"),verbose = FALSE)
   cntrl = r4ss::SS_readctl(file.path(SS.path,"control.ctl"),verbose = FALSE, datlist=file.path(SS.path, "data_echo.ss_new"))
@@ -682,7 +682,7 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
     arrange(Fleet)
   if(length(id)>0) Sels=Sels%>%filter(!Fleet==id)
   Sels=Sels%>%dplyr::select(-c(Factor,Fleet,Yr,Sex,Label))
-  LISTA$Number.of.extra.selectivity.time.blocks.by.fleet=rep(0,n.fleets)
+  LISTA$Number.of.extra.selectivity.time.blocks.by.fleet=rep(0,n.fleets+n.surveys)
    if(!is.na(Scen$Difference) & Scen$Difference=='NSF.logis.sel')        
   {
     id=match('Northern.shark',row.names(cntrl$size_selex_types))
@@ -696,8 +696,8 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
   Sels.ret=Sels
   Sels.ret[,]=1
   LISTA$Initial.retention.at.length.by.fleet=Sels.ret
-  LISTA$type.of.discards=rep(1,n.fleets)
-  LISTA$Initial.gammas.for.retention=as.data.frame(matrix(1,ncol=3,nrow=n.fleets))
+  LISTA$type.of.discards=rep(1,n.fleets+n.surveys)
+  LISTA$Initial.gammas.for.retention=as.data.frame(matrix(1,ncol=3,nrow=n.fleets+n.surveys))
   
   CPUE=dat$CPUE
   cpue.future.flag=rep(0,nrow(Fleet.info))
@@ -759,7 +759,8 @@ fun.populate.OPD=function(i,SS.path,Scen,Nregions=1)
   LISTA$Length.comps_historical.sample.size=Length.comps_historical.samp
   Length.comps_projected.samp=Length.comps_historical.samp
   Length.comps_projected.samp[-which(Fleet.info$fleetname%in%c('Southern.shark_2','Survey')),]=0
-  LISTA$Length.comps_projected.sample.size=Length.comps_projected.samp
+  Length.comps_projected.samp[Length.comps_projected.samp>0]=Neff.future
+  LISTA$Length.comps_projected.sample.size=Length.comps_projected.samp  
   LISTA$Length.comps_retained=c(nrow(a),n.fleets+n.surveys)
   Length.comps.ret_mat=as.data.frame(matrix(0,nrow=nrow(a),ncol=nrow(dat$len_info)+1))
   colnames(Length.comps.ret_mat)=names(CPUE.Region.1)

@@ -2,18 +2,21 @@
 # This script uses SSMSE and RatPack to perform Management Strategy Procedures to inform the development of the 
 #   Shark resource Harvest Strategy based on the 4 indicator species
 
-#notes: Alternative states of nature are considered thru multiple OM (Operating Model):
-#             alternative hypotheses on Steepness, Natural mortality, selectivity and illegal fishing
-#       Alternative harvest control rules and reference points are considered thru multiple EM (Estimation Model):
-#             alternative values of limit, threshold and target reference points
-#       The Alternative OM and EM are defined in 'hndl.mse.comp' below based on the 'Scenarios' spreadsheet
-#       Most files are set up automatically by this script but there is some manual tweaking to be done:
-#           RatPack: manually update the .OPD, .HSE and .proj files in the 'inputs' folder using values 
-#                    from input_HSE.txt and input_OPD.txt. Only do it for S1, then copy from S1 to other Scenarios and
-#                    then manually update relevant parts only.
-#           SSMSE:   In the first run, create files and re fit OM
-#                    For the OM and EM if there are time changing parameters (i.e., blocks in Q or Selectivity), copy, 
-#                       'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' 
+# Alternative states of nature are considered thru multiple OM (Operating Model):
+#       alternative hypotheses on Steepness, Natural mortality, selectivity and illegal fishing
+# The software default harvest control rule is considered
+# Alternative reference points are considered thru multiple EM (Estimation Model):
+#       alternative values of limit, threshold and target reference points
+# The Alternative OM and EM are defined in 'hndl.mse.comp' below based on the 'Scenarios' spreadsheet
+# Most input files are set up automatically by this script but there is some manual tweaking to be done:
+#     RatPack: In the first run, create files and manually update the .OPD, .HSE and .proj files in 
+#               the 'inputs' folder using values from input_HSE.txt and input_OPD.txt. 
+#              Do this for S1 and then copy from S1 to other Scenarios and then manually update relevant parts only.For Scenarios 
+#               with changes to OM, use the re-fit values (control.ss_new) from SSMSE to update the OPD
+#     SSMSE:   In the first run, create files and re fit the OM for scenarios with changes to OM. For scenarios with
+#               no changes to the OM, just copy across.
+#              VIP: For OM/EM, if there are time changing parameters (i.e., blocks in Q or Selectivity), copy, 
+#             'timevary Q parameters' or 'timevary selex parameters' from 'control.ss_new to 'control.ss' 
 
 # SSMSE reference material:
 #     https://nmfs-fish-tools.github.io/SSMSE/manual
@@ -95,11 +98,11 @@ Target.commercial.catch=Management_objectives%>%
 Catch.species.dataset=read.csv(handl_OneDrive("Analyses/Population dynamics/PSA/Annual_ktch_by_species.and.data.set.csv"))
 
 # Define global parameters ---------------
-First.Run.SSMSE=FALSE                  # set to TRUE to generate OMs, Folders, etc
-re.fit.OM=FALSE                        # set to TRU to re fit OM following changes 
+First.Run.SSMSE=FALSE                  # set to TRUE to generate OMs, Folders, etc (don't run again as it will over write them)
+re.fit.SSMSE.OM=FALSE                  # set to TRU to re fit OM following changes to control file 
 run.SSMSE=FALSE                        # set to TRUE to run SSMSE
-First.Run.RatPack=FALSE                # don't run as it will over right OPD and HSE files
-run.RatPack=FALSE                        # set to TRUE to run RatPack
+First.Run.RatPack=FALSE                # set to TRUE to generate OPD,HSE and proj files (don't run again as it will over write them)
+run.RatPack=FALSE                      # set to TRUE to run RatPack
 niters <- 2                            # number of simulations per scenario (100)
 Proj.years=10                          # number of projected years (25)
 Proj.years.obs=seq(1,Proj.years,by=5)  # sampled years in the projected period
@@ -160,6 +163,18 @@ for(i in 1:N.sp)
   }
   SCENARIOS[[i]]=dd%>%mutate(Scenario=paste0('S',row_number()))%>%mutate(Species=Keep.species[i])
 }
+
+re.fit.SSMSE.scenarios=SCENARIOS
+for(i in 1:N.sp)
+{
+  different.OM=c(re.fit.SSMSE.scenarios[[i]]%>%
+                       filter(is.na(Difference))%>%
+                       distinct(Difference, .keep_all = T)%>%
+                       pull(Scenario),
+                 re.fit.SSMSE.scenarios[[i]]%>%filter(!is.na(Difference))%>%pull(Scenario))
+  re.fit.SSMSE.scenarios[[i]]=re.fit.SSMSE.scenarios[[i]]%>%filter(Scenario%in%different.OM)
+}
+
 Not.tested.in.Rat.Pack='rep.cycle' #cannot test rep cycle in RatPack
 
 # Run SSMSE loop over each species-scenario combination ---------------
@@ -205,14 +220,14 @@ if(First.Run.SSMSE)
   toc()
 }
 
-#2. Re fit model to implement Scenario changes to OM and have all MSE inputs right
+#2. Re fit model to implement Scenario changes to OM and have all MSE inputs right (par.ss, etc)
 #note: before running this, must make manual changes to OM (block patterns, etc)
-if(re.fit.OM)
+if(re.fit.SSMSE.OM)
 {
   for(i in 1:N.sp)
   {
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
-    Scenarios=SCENARIOS[[i]]
+    Scenarios=re.fit.SSMSE.scenarios[[i]]
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE re fit OM for',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
@@ -223,7 +238,6 @@ if(re.fit.OM)
 
   }
 }
-
 
 #3. Execute SSMSE
 if(run.SSMSE)
@@ -303,7 +317,7 @@ if(First.Run.RatPack)
                               file.name=rat.pack.files[x])
       }
       
-      #manually populate HSE using this info
+      #2.1 Generate relevant info to manually populate HSE
       dumy=fun.populate.HSE(i,SS.path=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',
                                             Scenarios$Assessment.path[s],sep='/'),
                             scen=Scenarios[s,], proj.yrs=Proj.years, yrs.between.assess=Proj.years.between.ass)
@@ -312,10 +326,10 @@ if(First.Run.RatPack)
       sink()
       rm(dumy)
       
-      #manually populate OPD using this info   
+      #2.2 Generate relevant info to manually populate OPD   
       dumy=fun.populate.OPD(i,SS.path=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',
                                             Scenarios$Assessment.path[s],sep='/'),
-                            Scen=Scenarios[s,])
+                            Scen=Scenarios[s,],Neff.future=Effective.pop.size.future,Nregions=1)
       sink(paste0(sp_path_scen,'/inputs/input_OPD.txt'))
       print(dumy,row.names=F)
       sink()
