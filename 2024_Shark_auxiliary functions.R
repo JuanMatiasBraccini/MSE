@@ -81,7 +81,8 @@ fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,blo
                  "SizeSel_PMalOff_3_Northern.shark(1)","SizeSel_PMalOff_4_Northern.shark(1)",
                  "SizeSel_PMalOff_5_Northern.shark(1)"),
                row.names(control$size_selex_parms))
-      control$size_selex_parms=control$size_selex_parms[-id,]
+      id=subset(id,!is.na(id))
+      control$size_selex_parms=control$size_selex_parms[-id,] 
       control.new$size_selex_parms=control.new$size_selex_parms[-id,]
       
       id=match('SizeSel_P_1_Northern.shark(1)',row.names(control$size_selex_parms))
@@ -370,7 +371,7 @@ fn.run.SSSMSE=function(Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,proj.yrs,
   dat <- r4ss::SS_readdat(file.path(scen_path_OM, "data.dat"),verbose = FALSE)
   control <- r4ss::SS_readctl(file=file.path(scen_path_OM, "control.ctl"),
                               verbose = FALSE,
-                              datlist=file.path(scen_path_OM, "data_echo.ss_new"))
+                              datlist=file.path(scen_path_OM, "data.ss_new"))
 #  control <- r4ss::SS_readctl(file=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "control.ctl"),
 #                              verbose = FALSE,
 #                              datlist=file.path(paste(sp_path_assessment,Scen$Assessment.path,sep='/'), "data_echo.ss_new"))
@@ -561,8 +562,9 @@ fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
   LISTA$Mirrored.fleet=cntrl$size_selex_types$Special
   LISTA$Selectivity.pars=fn.right.format(x=cntrl$size_selex_parms,var='INIT')%>%dplyr::select(-fleet)
   LISTA$Selectivity.phase=fn.right.format(x=cntrl$size_selex_parms,var='PHASE')%>%dplyr::select(-fleet)
-  LISTA$Retention.inflection_Retention.slope_variance.adjustment.CPUE_variance.adjustment.discard=rep(0,n.fleets) 
-  LISTA$Variance.adjustment.length_variance.adjustment.age=rep(1,n.fleets) 
+  LISTA$Retention.inflection_Retention.slope=rep(0,n.fleets)
+  LISTA$variance.adjustment.CPUE_variance.adjustment.discard=rep(0,n.fleets+n.surveys) 
+  LISTA$Variance.adjustment.length_variance.adjustment.age=rep(1,n.fleets+n.surveys) 
   LISTA$Ageing.error=rep(0,dat$Nages+1)
   LISTA$SSR0init=exp(fn.get(parname='SR_LN(R0)',from=cntrl$SR_parms))
   #LISTA$SSR0init=exp(Report$estimated_non_dev_parameters[match('SR_LN(R0)',rownames(Report$estimated_non_dev_parameters)),]$Value)

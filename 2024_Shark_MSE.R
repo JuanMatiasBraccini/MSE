@@ -33,7 +33,8 @@
     # within another generation if between threshold and target
 
 rm(list=ls(all=TRUE))
-#remotes::install_github("nmfs-fish-tools/SSMSE")
+#library(remotes)
+#remotes::install_github("nmfs-fish-tools/SSMSE", ref='merge_catch_bias')  #install branch
 library(SSMSE)
 library(r4ss)
 library(tictoc)
@@ -224,6 +225,7 @@ if(First.Run.SSMSE)
 #note: before running this, must make manual changes to OM (block patterns, etc)
 if(re.fit.SSMSE.OM)
 {
+  tic() #953 secs
   for(i in 1:N.sp)
   {
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
@@ -237,17 +239,18 @@ if(re.fit.SSMSE.OM)
     }
 
   }
+  toc()
 }
 
 #3. Execute SSMSE
 if(run.SSMSE)
 {
+  tic()
   SSMSE_outputs=fn.create.list(Keep.species)
   for(i in 1:N.sp)
   {
-    dumy.out=fn.create.list(Scenarios$Scenario)
-    
     Scenarios=SCENARIOS[[i]]  
+    dumy.out=fn.create.list(Scenarios$Scenario)
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
     sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
     sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
@@ -259,11 +262,12 @@ if(run.SSMSE)
                                   proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
                                   yrs.between.assess=Proj.years.between.ass,
                                   cur.fleets=Current.fleets[[i]], future.cv=proj.CV,
-                                  specify.future.OM=FALSE, apply.future.meanbodywt=FALSE) #doesn't work with future meanbodywt
+                                  specify.future.OM=TRUE, apply.future.meanbodywt=FALSE) #doesn't work with future meanbodywt
     } #end s
     SSMSE_outputs[[i]]=dumy.out
     rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
   } #end i
+  toc()
 }
 
 
