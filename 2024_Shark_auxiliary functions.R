@@ -427,7 +427,7 @@ fn.run.SSSMSE=function(Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,proj.yrs,
                                      FltSvy = unique(dat$meanbodywt$Fleet),
                                      Part = unique(dat$meanbodywt$Part),
                                      Type = unique(dat$meanbodywt$Type),
-                                     SE = future.cv)%>%
+                                     Std_in = future.cv)%>%
                             filter(FltSvy%in%current.fleets)
   }  
   
@@ -553,7 +553,7 @@ fun.populate.HSE=function(i,SS.path,scen,proj.yrs,yrs.between.assess)
   LISTA$Growth.age.L2=dat$Nages
   LISTA$Maturity=c(fn.get(parname='Mat50%_Fem_GP_1',from=cntrl$MG_parms), fn.get(parname='Mat_slope_Fem_GP_1',from=cntrl$MG_parms))
   LISTA$fleets= dat$fleetinfo
-  n.fleets=nrow(dat$fleetinfo%>%filter(!grepl('Survey',fleetname)))
+  n.fleets=nrow(dat$fleetinfo%>%filter(!grepl('Survey',fleetname))) 
   LISTA$Number.of.fleets=n.fleets
   n.surveys=nrow(dat$fleetinfo%>%filter(grepl('Survey',fleetname)))
   LISTA$Number.of.surveys=n.surveys 
@@ -634,7 +634,8 @@ fun.populate.OPD=function(i,SS.path,Scen,Neff.future,Nregions)
   Fleet.info=dat$fleetinfo
   LISTA$fleets= Fleet.info
   n.fleets=nrow(Fleet.info%>%filter(!grepl('Survey',fleetname)))
-  LISTA$Number.of.fleets=n.fleets
+  LISTA$Number.of.metiers=n.fleets
+  LISTA$Number.of.fleets=n.fleets  
   n.surveys=nrow(Fleet.info%>%filter(grepl('Survey',fleetname)))
   LISTA$Number.of.surveys=n.surveys 
   LISTA$Maximum.age=dat$Nages
@@ -698,8 +699,8 @@ fun.populate.OPD=function(i,SS.path,Scen,Neff.future,Nregions)
   Sels.ret=Sels
   Sels.ret[,]=1
   LISTA$Initial.retention.at.length.by.fleet=Sels.ret
-  LISTA$type.of.discards=rep(1,n.fleets+n.surveys)
-  LISTA$Initial.gammas.for.retention=as.data.frame(matrix(1,ncol=3,nrow=n.fleets+n.surveys))
+  LISTA$type.of.discards=rep(1,n.fleets)
+  LISTA$Initial.gammas.for.retention=as.data.frame(matrix(1,ncol=3,nrow=n.fleets))
   
   CPUE=dat$CPUE
   cpue.future.flag=rep(0,nrow(Fleet.info))

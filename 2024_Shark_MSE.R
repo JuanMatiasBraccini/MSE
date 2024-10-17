@@ -54,9 +54,6 @@ source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
 fn.source("2024_Shark_auxiliary functions.R")
 
-#year latest stock assessment 
-assessment.year=2022  
-
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
 
@@ -105,11 +102,13 @@ run.SSMSE=FALSE                        # set to TRUE to run SSMSE
 First.Run.RatPack=FALSE                # set to TRUE to generate OPD,HSE and proj files (don't run again as it will over write them)
 run.RatPack=FALSE                      # set to TRUE to run RatPack
 niters <- 2                            # number of simulations per scenario (100)
+assessment.year=2022                   # year latest stock assessment 
 Proj.years=10                          # number of projected years (25)
-Proj.years.obs=seq(1,Proj.years,by=5)  # sampled years in the projected period
 Proj.years.between.ass=4               # years between assessments in the projected period
+Proj.years.obs=seq(1,Proj.years,by=1)  # sampled years in the projected period
+Proj.assessment.years=seq((assessment.year+1),(assessment.year+Proj.years),Proj.years.between.ass)[-1]
 proj.CV=0.2                            # CV in the projected period
-Effective.pop.size.future=100          #future length comp sample size
+Proj.Effective.pop.size.future=100     #projection length comp sample size
 theme_set(theme_light() +
             theme(panel.grid.major.x = element_blank(),
                   panel.grid.minor = element_blank(),
@@ -245,7 +244,7 @@ if(re.fit.SSMSE.OM)
 #3. Execute SSMSE
 if(run.SSMSE)
 {
-  tic()
+  tic()   #19 sec per scenario-simulation-proj.year (not in parallel)
   SSMSE_outputs=fn.create.list(Keep.species)
   for(i in 1:N.sp)
   {
@@ -258,11 +257,11 @@ if(run.SSMSE)
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       dumy.out[[s]]=fn.run.SSSMSE(Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
-                                  Nsims=niters, Neff.future=Effective.pop.size.future,
+                                  Nsims=niters, Neff.future=Proj.Effective.pop.size.future,
                                   proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
                                   yrs.between.assess=Proj.years.between.ass,
                                   cur.fleets=Current.fleets[[i]], future.cv=proj.CV,
-                                  specify.future.OM=TRUE, apply.future.meanbodywt=FALSE) #doesn't work with future meanbodywt
+                                  specify.future.OM=TRUE, apply.future.meanbodywt=TRUE) 
     } #end s
     SSMSE_outputs[[i]]=dumy.out
     rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
@@ -333,7 +332,7 @@ if(First.Run.RatPack)
       #2.2 Generate relevant info to manually populate OPD   
       dumy=fun.populate.OPD(i,SS.path=paste(in.path,paste0('1.',Keep.species[i]),assessment.year,'SS3 integrated',
                                             Scenarios$Assessment.path[s],sep='/'),
-                            Scen=Scenarios[s,],Neff.future=Effective.pop.size.future,Nregions=1)
+                            Scen=Scenarios[s,],Neff.future=Proj.Effective.pop.size.future,Nregions=1)
       sink(paste0(sp_path_scen,'/inputs/input_OPD.txt'))
       print(dumy,row.names=F)
       sink()
@@ -453,7 +452,7 @@ if(run.RatPack)
                                 grouping='Year',
                                 var='SSBcurrent')
       EMSSBquant=fn.percentiles(d=EMOut %>%
-                                    filter(RBCyear==2022 | RBCyear==2025) %>%   #ACA, why these years??
+                                    filter(RBCyear%in% Proj.assessment.years) %>%   
                                     group_by(RBCyear) %>%
                                     pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
                                                  names_to="Year", values_to="estSSB", names_prefix="X"),
