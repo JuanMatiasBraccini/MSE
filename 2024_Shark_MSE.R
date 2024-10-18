@@ -2,9 +2,9 @@
 # This script uses SSMSE and RatPack to perform Management Strategy Procedures to inform the development of the 
 #   Shark resource Harvest Strategy based on the 4 indicator species
 
+# The software default harvest control rule is considered
 # Alternative states of nature are considered thru multiple OM (Operating Model):
 #       alternative hypotheses on Steepness, Natural mortality, selectivity and illegal fishing
-# The software default harvest control rule is considered
 # Alternative reference points are considered thru multiple EM (Estimation Model):
 #       alternative values of limit, threshold and target reference points
 # The Alternative OM and EM are defined in 'hndl.mse.comp' below based on the 'Scenarios' spreadsheet
@@ -78,9 +78,6 @@ hndl.mse.comp=handl_OneDrive("Analyses/MSE/Shark harvest strategy/Scenarios.xlsx
 Management_objectives=read_excel(hndl.mse.comp,  sheet = "Management objectives",skip = 0)
 Operating_models=read_excel(hndl.mse.comp,       sheet = "Operating model",skip = 0)
 Management_scenarios=read_excel(hndl.mse.comp,   sheet = "Estimation model",skip = 0)
-harvest_control_rule=read_excel(hndl.mse.comp, sheet = "harvest control rule",skip = 0)
-performance_indicators=read_excel(hndl.mse.comp, sheet = "Performance measure",skip = 0)
-Future_data_collection=read_excel(hndl.mse.comp, sheet = "Future data collection",skip = 0)
 
   #Historic catch ranges
 Target.commercial.catch=Management_objectives%>%
