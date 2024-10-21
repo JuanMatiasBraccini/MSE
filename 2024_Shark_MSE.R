@@ -41,6 +41,8 @@ library(tictoc)
 library(tidyverse)
 library(readxl)
 library(doParallel)
+library(ggrepel)
+
 #library(Hmisc)
 set.lib.path=TRUE
 if(grepl('4.0.3',version[['version.string']])) set.lib.path=FALSE
@@ -53,6 +55,7 @@ if(!exists('handl_OneDrive')) source(fn.user(x1='C:/Users',
 source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
 fn.source("2024_Shark_auxiliary functions.R")
+
 
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
@@ -120,6 +123,9 @@ species_logistic.selectivity.NSF=sort(unique(Operating_models%>%filter(!is.na(NS
 species_IUU_indonesia=sort(unique(Operating_models%>%filter(!is.na(Indo.IUU))%>%pull(Species)))    
 
 subset.scenarios=TRUE  #test scenario grid?? way time consuming
+
+RiskColors=c('Negligible'="cornflowerblue", 'Low'="chartreuse3", 'Medium'="yellow1",
+             'High'="orange", 'Severe'="brown1")
 
 # Create relevant directories and handles for each MSE framework  ---------------
   #SSMSE

@@ -822,3 +822,115 @@ fn.percentiles=function(d,grouping,var)
                      upper=quantile(!!as.name(var), probs=0.75, na.rm=TRUE),
                      ymax=quantile(!!as.name(var), probs=0.9, na.rm=TRUE)))
 }
+
+fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
+{
+  p=data%>%
+    ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
+    geom_col(width = 1, color = "white") + 
+    facet_wrap(~Scenario)+
+    coord_polar()+
+    labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
+    theme_minimal() +
+    theme(legend.position = "none",
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.y = element_blank(),
+      axis.text.x = element_text(face = "bold"),
+      plot.title = element_text(size = 24, face = "bold"),
+      plot.subtitle = element_text(size = 12))
+  
+  return(p)
+}
+
+fn.polar.plot(data =rbind(data.frame(Indicator = paste("Group",1:10),
+                               value = sample(10, replace = TRUE),Scenario='S1'),
+                          data.frame(Indicator = paste("Group",1:10),
+                                     value = sample(10, replace = TRUE),Scenario='S2')),
+              Title='Species X')
+
+
+
+kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,txt.col='black',YrSize=4,ALPHA=1)
+{
+  dta=data.frame(x=b.traj,
+                 y=f.traj,
+                 yr=Years)%>%
+    arrange(yr)
+  Mx.F=max(2,max(dta$y,na.rm=T))
+  Mx.B=max(2,max(dta$x,na.rm=T))
+  Mn.F=0 
+  Mn.B=0
+  
+  kobe <-dta%>%
+    ggplot(aes(x, y))+
+    geom_rect(xmin = 1, xmax = Mx.B, ymin = Mn.F, ymax = 1, fill = RiskColors['Low'], alpha = ALPHA) +
+    geom_rect(xmin = Mn.B, xmax = 1, ymin = 1, ymax = Mx.F, fill = RiskColors['Severe'], alpha = ALPHA) +
+    geom_rect(xmin = 1, xmax = Mx.B, ymin = 1, ymax = Mx.F, fill = RiskColors['High'], alpha = ALPHA) +
+    geom_rect(xmin = Mn.B, xmax = 1, ymin = Mn.F, ymax = 1, fill = RiskColors['Medium'], alpha = ALPHA)
+  if(!is.null(Probs))
+  {
+    Probs=Probs%>%filter(x>=0 & y>=0)
+    kernelF <- gplots::ci2d(Probs$x, Probs$y, nbins = 50, factor = 1.5, 
+                            ci.levels = c(0.5, 0.8, 0.95), show = "none")
+    KernelD=rbind(kernelF$contours$"0.95"%>%mutate(CI='1',col='grey30'),
+                  kernelF$contours$"0.8"%>%mutate(CI='2',col='grey60'),
+                  kernelF$contours$"0.5"%>%mutate(CI='3',col='grey85'))
+    kernels=KernelD%>%distinct(CI,col)%>%pull(col)
+    names(kernels)=KernelD%>%distinct(CI,col)%>%pull(CI)
+    
+    Pr.d=data.frame(
+      Prob=c(sum(ifelse(Probs$x >= 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
+             sum(ifelse(Probs$x < 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
+             sum(ifelse(Probs$x >= 1 & Probs$y > 1, 1, 0))/length(Probs$x)*100,
+             sum(ifelse(Probs$x < 1 & Probs$y > 1, 1, 0))/length(Probs$x) * 100),
+      col=RiskColors[c('Low','Medium','High','Severe')],
+      x=rep(-10,4),  #dummy
+      y=rep(-10,4))
+    pr.ds=Pr.d%>%pull(col)
+    Nms.probs=round(Pr.d%>%pull(Prob),1)
+    Nms.probs=ifelse(Nms.probs>0 & Nms.probs<0.1,'<0.1',Nms.probs)
+    names(pr.ds)=paste(Nms.probs,'%',sep='')
+    #pr.ds=pr.ds[which(!names(pr.ds)=='0%')]
+    kobe <-kobe +
+      geom_polygon(data=KernelD,aes(x, y,fill=CI),size=1.25,alpha=0.5)+
+      scale_fill_manual(labels=c("95%","80%","50%"),values = kernels)+
+      geom_point(data=Pr.d,aes(x, y,color=col),alpha = 1,size=5)+
+      scale_color_manual(labels=names(pr.ds),values =Pr.d$col)+
+      labs(CI="", col=dta[nrow(dta),'yr'])
+    
+  }
+  kobe <-kobe + 
+    coord_cartesian(xlim = c(Mn.B,Mx.B), ylim=c(Mn.F,Mx.F))+
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0))+
+    geom_path(linetype = 2, size = 0.5,color='deepskyblue4')+
+    geom_point(size=2,color='deepskyblue4')+
+    geom_point(aes(x=dta[1,'x'],y=dta[1,'y']),size=4,shape=22,fill='white',alpha=.3)+
+    geom_point(aes(x=dta[nrow(dta),'x'],y=dta[nrow(dta),'y']),size=4,shape=25,fill='white',alpha=.3)+      
+    geom_text_repel(data=dta[1,],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
+    geom_text_repel(data=dta[nrow(dta),],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
+    xlab(expression(B/~B[MSY]))+ylab(expression(F/~F[MSY]))+
+    labs(title = Titl)+
+    theme_bw()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          axis.text = element_text(size=16),
+          axis.title = element_text(size=20),
+          plot.title = element_text(size=20,hjust=0),
+          legend.text = element_text(size=15),
+          legend.title = element_text(size=17),
+          legend.margin=margin(0,0,0,0),
+          legend.box.margin=margin(-10,0,-10,-10))
+  if(!is.null(Probs)) kobe=kobe+theme(legend.title = element_blank(),legend.text.align = 1)
+  return(kobe)
+}
+
+kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),
+         b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
+         Years=1:11,
+         Titl='Scenario 1',
+         Probs=data.frame(x=rnorm(1e3,0.9,0.05),  
+                                y=rnorm(1e3,0.9,0.05)),
+         txt.col='black',
+         YrSize=4)
