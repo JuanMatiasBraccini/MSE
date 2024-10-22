@@ -828,31 +828,31 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
   p=data%>%
     ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
     geom_col(width = 1, color = "white") + 
-    facet_wrap(~Scenario)+
-    coord_polar()+
+    facet_wrap(~Scenario,ncol=1)+
+    coord_curvedpolar()+
     labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
-    theme_minimal() +
+    theme_minimal()%+replace% 
     theme(legend.position = "none",
-      axis.title.x = element_blank(),
-      axis.title.y = element_blank(),
-      axis.ticks = element_blank(),
-      axis.text.y = element_blank(),
-      axis.text.x = element_text(face = "bold"),
-      plot.title = element_text(size = 24, face = "bold"),
-      plot.subtitle = element_text(size = 12))
-  
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.y = element_blank(),
+          plot.subtitle = element_text(size = 12),
+          panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=16),
+          axis.text = element_text(size=12),
+          axis.title = element_text(size=16),
+          plot.title = element_text(size=20,hjust=0),
+          legend.text = element_text(size=15),
+          legend.title = element_text(size=17),
+          plot.margin = unit(c(0, 0, 0, 0), "cm"),
+          legend.margin=margin(0,0,0,0),
+          legend.box.margin=margin(-10,0,-10,-10))
   return(p)
 }
 
-fn.polar.plot(data =rbind(data.frame(Indicator = paste("Group",1:10),
-                               value = sample(10, replace = TRUE),Scenario='S1'),
-                          data.frame(Indicator = paste("Group",1:10),
-                                     value = sample(10, replace = TRUE),Scenario='S2')),
-              Title='Species X')
-
-
-
-kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,txt.col='black',YrSize=4,ALPHA=1)
+kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.col,YrSize,
+                     ALPHA=1,show.marginal.density=FALSE)
 {
   dta=data.frame(x=b.traj,
                  y=f.traj,
@@ -874,9 +874,9 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,txt.col='black',YrSize=
     Probs=Probs%>%filter(x>=0 & y>=0)
     kernelF <- gplots::ci2d(Probs$x, Probs$y, nbins = 50, factor = 1.5, 
                             ci.levels = c(0.5, 0.8, 0.95), show = "none")
-    KernelD=rbind(kernelF$contours$"0.95"%>%mutate(CI='1',col='grey30'),
-                  kernelF$contours$"0.8"%>%mutate(CI='2',col='grey60'),
-                  kernelF$contours$"0.5"%>%mutate(CI='3',col='grey85'))
+    KernelD=rbind(kernelF$contours$"0.95"%>%mutate(CI='1',col='cadetblue4'), #'grey30'
+                  kernelF$contours$"0.8"%>%mutate(CI='2',col='cadetblue3'), #'grey60'
+                  kernelF$contours$"0.5"%>%mutate(CI='3',col='cadetblue1')) #'grey85'
     kernels=KernelD%>%distinct(CI,col)%>%pull(col)
     names(kernels)=KernelD%>%distinct(CI,col)%>%pull(CI)
     
@@ -905,14 +905,14 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,txt.col='black',YrSize=
     coord_cartesian(xlim = c(Mn.B,Mx.B), ylim=c(Mn.F,Mx.F))+
     scale_x_continuous(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0))+
-    geom_path(linetype = 2, size = 0.5,color='deepskyblue4')+
-    geom_point(size=2,color='deepskyblue4')+
-    geom_point(aes(x=dta[1,'x'],y=dta[1,'y']),size=4,shape=22,fill='white',alpha=.3)+
-    geom_point(aes(x=dta[nrow(dta),'x'],y=dta[nrow(dta),'y']),size=4,shape=25,fill='white',alpha=.3)+      
-    geom_text_repel(data=dta[1,],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
+    geom_path(linetype = 2, size = 0.5,color=line.col)+
+    geom_point(size=pt.size,color=line.col,alpha=seq(0.2,1,length.out=length(dta$yr)))+
+   # geom_point(aes(x=dta[1,'x'],y=dta[1,'y']),size=4,shape=22,fill='white',alpha=.3)+
+  #  geom_point(aes(x=dta[nrow(dta),'x'],y=dta[nrow(dta),'y']),size=4,shape=25,fill='white',alpha=.3)+      
+   # geom_text_repel(data=dta[1,],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
     geom_text_repel(data=dta[nrow(dta),],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
-    xlab(expression(B/~B[MSY]))+ylab(expression(F/~F[MSY]))+
-    labs(title = Titl)+
+    xlab(expression(B/~B[MSY]))+
+    ylab(expression(F/~F[MSY]))+
     theme_bw()%+replace% 
     theme(panel.grid.minor = element_blank(),
           axis.text = element_text(size=16),
@@ -923,14 +923,72 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,txt.col='black',YrSize=
           legend.margin=margin(0,0,0,0),
           legend.box.margin=margin(-10,0,-10,-10))
   if(!is.null(Probs)) kobe=kobe+theme(legend.title = element_blank(),legend.text.align = 1)
+  
+  if(show.marginal.density)
+  {
+    xplot <- ggdensity(data=Probs, x='x', fill = "steelblue",color = 'transparent') +
+      xlim(Mn.B,Mx.B)+
+      theme_void()+
+      theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))+
+      labs(title = Titl)
+    yplot <- ggdensity(data=Probs, x='y', fill = "steelblue",color = 'transparent') + 
+      rotate()+
+      xlim(Mn.F,Mx.F)+ 
+      theme_void()+
+      theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+    kobe=plot_grid(xplot, NULL, kobe, yplot, ncol = 2, align = "hv",
+                   rel_widths = c(4, 1), rel_heights = c(1, 4))
+    
+  }
+  if(!show.marginal.density) kobe=kobe+labs(title = Titl)
+  
   return(kobe)
 }
 
-kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),
-         b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
-         Years=1:11,
-         Titl='Scenario 1',
-         Probs=data.frame(x=rnorm(1e3,0.9,0.05),  
-                                y=rnorm(1e3,0.9,0.05)),
-         txt.col='black',
-         YrSize=4)
+fn.quilt.plot=function(df,clr.scale,col.breaks)
+{
+  color_df=df
+  for(x in 1:ncol(color_df)) color_df[,x]=clr.scale(col.breaks)[as.numeric(cut(color_df[,x],breaks = col.breaks))]
+  
+  
+  my_table_theme <- ttheme_default(core=list(fg_params=list(col='grey20'),bg_params = list(fill = unlist(color_df), col=NA)))
+  plot.new()
+  grid.table(df, theme = my_table_theme)
+  
+}
+
+fn.pef.ind.dist=function(df)
+{
+  df%>%
+    ggplot(aes(Value,fill=Scenario))+
+    geom_density(adjust=2,alpha=0.4)+
+    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+xlim(0,1.1)+
+    ylab('Density distribution')+xlab('')+
+    theme_bw()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=15),
+          axis.text = element_text(size=12),
+          axis.title = element_text(size=19),
+          legend.text = element_text(size=14),
+          legend.title = element_text(size=15),
+          legend.margin=margin(0,0,0,0),
+          legend.box.margin=margin(-10,0,-10,-10))
+}
+
+fn.pef.ind.boxplot=function(df)
+{
+  df%>%
+    ggplot(aes(Scenario,Value,fill=Scenario))+
+    geom_violin(alpha=0.3)+
+    geom_boxplot(alpha=0.8,width=0.1)+
+    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
+    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
+    ylab('Indicator value')+xlab('')+
+    theme_bw()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=15),
+          axis.text = element_text(size=12),
+          axis.title = element_text(size=19),
+          legend.position = 'none',
+          legend.margin=margin(0,0,0,0))
+}

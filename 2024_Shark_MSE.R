@@ -42,6 +42,11 @@ library(tidyverse)
 library(readxl)
 library(doParallel)
 library(ggrepel)
+library(gridExtra)
+library(fields)
+library(ggpubr)
+library(cowplot)
+library(geomtextpath)
 
 #library(Hmisc)
 set.lib.path=TRUE
@@ -247,7 +252,7 @@ if(re.fit.SSMSE.OM)
 #3. Execute SSMSE
 if(run.SSMSE)
 {
-  tic()   #19 sec per scenario-simulation-proj.year (not in parallel)
+  tic()   #19 sec per species-scenario-simulation-proj.year (not in parallel)
   SSMSE_outputs=fn.create.list(Keep.species)
   for(i in 1:N.sp)
   {
@@ -348,7 +353,7 @@ if(First.Run.RatPack)
 #2. Execute RatPack 
 if(run.RatPack)
 {
-  tic()
+  tic()  #5 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
@@ -406,15 +411,58 @@ write.csv(do.call(rbind,Tab.HCR.scens),paste0(outs.path,'/Table 1.Scenarios_HCR_
 # Report SSMSE outputs  ----------------------------------------------------------
 if(run.SSMSE)
 {
+  output_polar.list=fn.create.list(Keep.species)
+  output_kobe.list=output_dis.pi.list=output_boxplot.pi.list=output_quilt.list=output_polar.list
   tic()
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
+    scen.list_polar=fn.create.list(Scenarios$Scenario)
+    scen.list_kobe=scen.list_polar
     for(s in 1:nrow(Scenarios))
     {
-      print(paste('SSMSE Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      print(paste('SSMSE Create display figures for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+
+      #Save performance indicator polar plots
+      scen.list_polar[[s]]=fn.polar.plot(data =expand.grid(Scenario=rep(paste("S",1)),    #aca replace with real values
+                                                           Indicator=paste("Indicator",1:8))%>%
+                                           mutate(value=sample(x=seq(0.1,1,by=0.1),size=8,replace=T)))
+                  
+      #Save Kobe plot
+      scen.list_kobe[[s]]=kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),   #ACA: replace with real x and y outputs
+                                    b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
+                                    Years=1:11,
+                                    Titl=Scenarios$Scenario[s],
+                                    Probs=data.frame(x=rnorm(1e3,0.9,0.05),  #ACA: replace with real x and y probs for final year
+                                                     y=rnorm(1e3,0.9,0.05)),
+                                    pt.size=4,
+                                    txt.col='black',
+                                    line.col='black',
+                                    YrSize=4)
       
     } #end s
+    output_polar.list[[i]]=scen.list_polar
+    output_kobe.list[[i]]=scen.list_kobe
+    
+    #Save distribution of performance indicators
+    #ACA: first must calculate relative value of each indicator for each scenario
+    output_dis.pi.list[[i]]=fn.pef.ind.dist(df=expand.grid(Scenario=rep(paste("S",1:2),each=100),    #aca replace with real density for final year
+                                                          Perf.ind=paste("Indicator",1:3))%>%
+                                              mutate(Value=sample(x=seq(0,1,by=0.1),size=600,replace=T)))
+    output_boxplot.pi.list[[i]]=fn.pef.ind.boxplot(df=expand.grid(Scenario=rep(paste("S",1:2),each=100),    #aca replace with real density for final year
+                                                                  Perf.ind=paste("Indicator",1:3))%>%
+                                                     mutate(Value=sample(x=seq(0,1,by=0.1),size=600,replace=T)))        
+    
+    #Save quilt plot
+    #ACA: first must calculate relative value of each indicator for each scenario
+    output_quilt.list[[i]]=fn.quilt.plot(df=data.frame(Indicator1=sample(seq(0,1,.1),10),   #ACA: replace with real x and y outputs (rescaled 0:1)
+                                                      Indicator2=sample(seq(0,1,.1),10))%>%
+                                                      `rownames<-`(paste0('S',1:10)),
+                                        clr.scale=colorRampPalette(c('white','cadetblue2','cornflowerblue')),
+                                        col.breaks=50) 
+    
+
+    
   } #end i
   toc()
 }
