@@ -26,8 +26,8 @@
 
 #HCL
   #DPIRD's:
-    # 50-100% effort reduction if performance indicator between limit and threshold
-    # 10-50% effort reduction if performance indicator between threshold and target
+    # 50-100% effort reduction if performance indicator (relative biomass) between limit and threshold
+    # 10-50% effort reduction if performance indicator (relative biomass) between threshold and target
   #MSC guidelines:
     # Bring back to threshold within 1 generation if between limit and threshold and 
     # within another generation if between threshold and target
@@ -47,20 +47,22 @@ library(fields)
 library(ggpubr)
 library(cowplot)
 library(geomtextpath)
+library(patchwork)
+library(flextable)
+library(grid)
 
 #library(Hmisc)
 set.lib.path=TRUE
 if(grepl('4.0.3',version[['version.string']])) set.lib.path=FALSE
 if(set.lib.path).libPaths("C:/Users/myb/AppData/Local/R/win-library/4.4")
+
 # Set up paths and source functions  ---------------
 fn.user=function(x1,x2)paste(x1,Sys.getenv("USERNAME"),x2,sep='/')
 if(!exists('handl_OneDrive')) source(fn.user(x1='C:/Users',
                                              x2='OneDrive - Department of Primary Industries and Regional Development/Matias/Analyses/SOURCE_SCRIPTS/Git_other/handl_OneDrive.R'))
-
 source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
 fn.source("2024_Shark_auxiliary functions.R")
-
 
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
@@ -86,6 +88,8 @@ hndl.mse.comp=handl_OneDrive("Analyses/MSE/Shark harvest strategy/Scenarios.xlsx
 Management_objectives=read_excel(hndl.mse.comp,  sheet = "Management objectives",skip = 0)
 Operating_models=read_excel(hndl.mse.comp,       sheet = "Operating model",skip = 0)
 Management_scenarios=read_excel(hndl.mse.comp,   sheet = "Estimation model",skip = 0)
+
+Perform.ind=Management_objectives%>%filter(Used.in.MSE=='Yes')%>%distinct(Perf.ind.name,.keep_all = T)%>%pull(Perf.ind.name)
 
   #Historic catch ranges
 Target.commercial.catch=Management_objectives%>%
@@ -411,47 +415,66 @@ write.csv(do.call(rbind,Tab.HCR.scens),paste0(outs.path,'/Table 1.Scenarios_HCR_
 # Report SSMSE outputs  ----------------------------------------------------------
 if(run.SSMSE)
 {
-  output_polar.list=fn.create.list(Keep.species)
-  output_kobe.list=output_dis.pi.list=output_boxplot.pi.list=output_quilt.list=output_polar.list
+  output_dis.pi.list=fn.create.list(Keep.species)
+  output_boxplot.pi.list=output_quilt.list=output_dis.pi.list
   tic()
   for(i in 1:N.sp)
   {
+    print(paste('SSMSE create figures for ',Keep.species[i],'-----------'))
     Scenarios=SCENARIOS[[i]]
-    scen.list_polar=fn.create.list(Scenarios$Scenario)
-    scen.list_kobe=scen.list_polar
+    
+    #Save Kobe plot
+    scen.list_kobe=fn.create.list(Scenarios$Scenario)
     for(s in 1:nrow(Scenarios))
     {
-      print(paste('SSMSE Create display figures for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
-
-      #Save performance indicator polar plots
-      scen.list_polar[[s]]=fn.polar.plot(data =expand.grid(Scenario=rep(paste("S",1)),    #aca replace with real values
-                                                           Indicator=paste("Indicator",1:8))%>%
-                                           mutate(value=sample(x=seq(0.1,1,by=0.1),size=8,replace=T)))
-                  
-      #Save Kobe plot
       scen.list_kobe[[s]]=kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),   #ACA: replace with real x and y outputs
-                                    b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
-                                    Years=1:11,
-                                    Titl=Scenarios$Scenario[s],
-                                    Probs=data.frame(x=rnorm(1e3,0.9,0.05),  #ACA: replace with real x and y probs for final year
+                                   b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
+                                   Years=1:11,
+                                   Titl=Scenarios$Scenario[s],
+                                   Probs=data.frame(x=rnorm(1e3,0.9,0.05),  #ACA: replace with real x and y probs for final year
                                                      y=rnorm(1e3,0.9,0.05)),
-                                    pt.size=4,
-                                    txt.col='black',
-                                    line.col='black',
-                                    YrSize=4)
+                                   pt.size=2.5,
+                                   txt.col='transparent',
+                                   line.col='black',
+                                   YrSize=4,
+                                   YLAB='', XLAB='',
+                                   Leg.txt.size=10)
       
     } #end s
-    output_polar.list[[i]]=scen.list_polar
-    output_kobe.list[[i]]=scen.list_kobe
+    wid=6.5
+    NroW=5
+    if(nrow(Scenarios)<9)
+    {
+      wid=7.5
+      NroW=4
+    }
+    ggarrange(plotlist = scen.list_kobe,ncol=2,nrow=NroW, common.legend=FALSE)%>%
+          annotate_figure(left = textGrob(expression(F/~F[MSY]), rot = 90, vjust = 1, gp = gpar(cex = 1.7)),
+                          bottom = textGrob(expression(B/~B[MSY]), gp = gpar(cex = 1.7)))
+    ggsave(paste0(outs.path,'/2_Kobe_SSMSE_',Keep.species[i],'.tiff'),width = wid,height = 12,compression = "lzw")
     
-    #Save distribution of performance indicators
+
+    #Save distribution of performance indicators   Perform.ind
     #ACA: first must calculate relative value of each indicator for each scenario
-    output_dis.pi.list[[i]]=fn.pef.ind.dist(df=expand.grid(Scenario=rep(paste("S",1:2),each=100),    #aca replace with real density for final year
-                                                          Perf.ind=paste("Indicator",1:3))%>%
-                                              mutate(Value=sample(x=seq(0,1,by=0.1),size=600,replace=T)))
-    output_boxplot.pi.list[[i]]=fn.pef.ind.boxplot(df=expand.grid(Scenario=rep(paste("S",1:2),each=100),    #aca replace with real density for final year
-                                                                  Perf.ind=paste("Indicator",1:3))%>%
-                                                     mutate(Value=sample(x=seq(0,1,by=0.1),size=600,replace=T)))        
+    N.dumi=100  #delete
+    output_dis.pi.list[[i]]=fn.perf.ind.dist(df=expand.grid(Scenario=rep(Scenarios$Scenario,each=N.dumi),    #aca replace with real density for final year
+                                                          Perf.ind=Perform.ind)%>%
+                                              mutate(Value=sample(x=seq(0,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind)*N.dumi,replace=T)),
+                                            YLAB='',
+                                            Title=Keep.species[i])
+    output_boxplot.pi.list[[i]]=fn.perf.ind.boxplot(df=expand.grid(Scenario=rep(Scenarios$Scenario,each=N.dumi),    #aca replace with real density for final year
+                                                                   Perf.ind=Perform.ind)%>%
+                                                      mutate(Value=sample(x=seq(0,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind)*N.dumi,replace=T)),
+                                                   YLAB='',
+                                                   Title=Keep.species[i])        
+    
+    #Save performance indicator polar plots
+    fn.polar.plot(data= expand.grid(Scenario=Scenarios$Scenario,    #aca replace with real values
+                                    Indicator=Perform.ind)%>%
+                              mutate(value=sample(x=seq(0.1,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind),replace=T)),
+                  Title= "")
+    ggsave(paste0(outs.path,'/3_Polar.plot_SSMSE_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
+    
     
     #Save quilt plot
     #ACA: first must calculate relative value of each indicator for each scenario
@@ -459,11 +482,29 @@ if(run.SSMSE)
                                                       Indicator2=sample(seq(0,1,.1),10))%>%
                                                       `rownames<-`(paste0('S',1:10)),
                                         clr.scale=colorRampPalette(c('white','cadetblue2','cornflowerblue')),
-                                        col.breaks=50) 
+                                        col.breaks=50,
+                                        Titl=Keep.species[i]) 
     
 
     
   } #end i
+  
+  #Output combined distribution of performance indicators
+  ggarrange(plotlist = output_dis.pi.list,nrow=1,common.legend = FALSE)%>%
+    annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_SSMSE.tiff'),width = 9,height = 10,compression = "lzw")
+  
+  ggarrange(plotlist = output_boxplot.pi.list,nrow=1)%>%
+    annotate_figure(left = textGrob('Indicator value', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_box.plot_SSMSE.tiff'),width = 9,height = 10,compression = "lzw")
+  
+  #Output combined quilt plot
+  ggarrange(plotlist = output_quilt.list,ncol=1)
+  ggsave(paste0(outs.path,'/4_Quilt.plot_SSMSE.tiff'),width = 6,height = 6,compression = "lzw")
+
+  
+  #Missing. Add time series of key performance indicators and display like '1_Perf_indicator_distribution.plot_SSMSE'
+  
   toc()
 }
 # Report Ratpack outputs  ----------------------------------------------------------

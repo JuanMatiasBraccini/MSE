@@ -828,14 +828,16 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
   p=data%>%
     ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
     geom_col(width = 1, color = "white") + 
-    facet_wrap(~Scenario,ncol=1)+
+    facet_wrap(~Scenario)+
     coord_curvedpolar()+
     labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
     theme_minimal()%+replace% 
-    theme(legend.position = "none",
+    theme(legend.title = element_blank(),
+          legend.position = 'bottom',
           axis.title.x = element_blank(),
           axis.title.y = element_blank(),
           axis.ticks = element_blank(),
+          axis.text.x = element_blank(),
           axis.text.y = element_blank(),
           plot.subtitle = element_text(size = 12),
           panel.grid.minor = element_blank(),
@@ -844,7 +846,6 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
           axis.title = element_text(size=16),
           plot.title = element_text(size=20,hjust=0),
           legend.text = element_text(size=15),
-          legend.title = element_text(size=17),
           plot.margin = unit(c(0, 0, 0, 0), "cm"),
           legend.margin=margin(0,0,0,0),
           legend.box.margin=margin(-10,0,-10,-10))
@@ -852,7 +853,8 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
 }
 
 kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.col,YrSize,
-                     ALPHA=1,show.marginal.density=FALSE)
+                     ALPHA=1,show.marginal.density=FALSE,show.probs.contour.legend=FALSE,
+                     YLAB=expression(F/~F[MSY]),XLAB=expression(B/~B[MSY]), Leg.txt.size=14)
 {
   dta=data.frame(x=b.traj,
                  y=f.traj,
@@ -899,7 +901,7 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
       geom_point(data=Pr.d,aes(x, y,color=col),alpha = 1,size=5)+
       scale_color_manual(labels=names(pr.ds),values =Pr.d$col)+
       labs(CI="", col=dta[nrow(dta),'yr'])
-    
+    if(!show.probs.contour.legend) kobe=kobe+guides(color=guide_legend("CI"), fill = "none")
   }
   kobe <-kobe + 
     coord_cartesian(xlim = c(Mn.B,Mx.B), ylim=c(Mn.F,Mx.F))+
@@ -911,17 +913,19 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
   #  geom_point(aes(x=dta[nrow(dta),'x'],y=dta[nrow(dta),'y']),size=4,shape=25,fill='white',alpha=.3)+      
    # geom_text_repel(data=dta[1,],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
     geom_text_repel(data=dta[nrow(dta),],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
-    xlab(expression(B/~B[MSY]))+
-    ylab(expression(F/~F[MSY]))+
+    xlab(XLAB)+
+    ylab(YLAB)+
     theme_bw()%+replace% 
     theme(panel.grid.minor = element_blank(),
-          axis.text = element_text(size=16),
+          axis.text = element_text(size=9),
           axis.title = element_text(size=20),
           plot.title = element_text(size=20,hjust=0),
-          legend.text = element_text(size=15),
+          legend.text = element_text(size=Leg.txt.size),
+          legend.position = 'bottom',
           legend.title = element_text(size=17),
-          legend.margin=margin(0,0,0,0),
-          legend.box.margin=margin(-10,0,-10,-10))
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.margin=margin(-10,0,-10,0),
+          legend.box.margin=margin(-20,10,10,-10))
   if(!is.null(Probs)) kobe=kobe+theme(legend.title = element_blank(),legend.text.align = 1)
   
   if(show.marginal.density)
@@ -945,50 +949,66 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
   return(kobe)
 }
 
-fn.quilt.plot=function(df,clr.scale,col.breaks)
+fn.quilt.plot=function(df,clr.scale,col.breaks,Titl)
 {
   color_df=df
   for(x in 1:ncol(color_df)) color_df[,x]=clr.scale(col.breaks)[as.numeric(cut(color_df[,x],breaks = col.breaks))]
   
+  df=t(df)
+  color_df=t(color_df)
   
   my_table_theme <- ttheme_default(core=list(fg_params=list(col='grey20'),bg_params = list(fill = unlist(color_df), col=NA)))
-  plot.new()
-  grid.table(df, theme = my_table_theme)
-  
+  #plot.new()
+  #grid.table(df, theme = my_table_theme)
+  G <- ggplot() +
+    theme_void() +
+    annotation_custom(gridExtra::tableGrob(df, theme = my_table_theme),
+                      xmin = -Inf,
+                      xmax = Inf,
+                      ymin = -Inf,
+                      ymax = Inf)+
+    ggtitle(Titl)+
+    theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+  return(G)
 }
 
-fn.pef.ind.dist=function(df)
+fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 {
   df%>%
     ggplot(aes(Value,fill=Scenario))+
     geom_density(adjust=2,alpha=0.4)+
     facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+xlim(0,1.1)+
-    ylab('Density distribution')+xlab('')+
+    ylab(YLAB)+xlab('')+
     theme_bw()%+replace% 
     theme(panel.grid.minor = element_blank(),
-          strip.text.x = element_text(size=15),
-          axis.text = element_text(size=12),
-          axis.title = element_text(size=19),
-          legend.text = element_text(size=14),
-          legend.title = element_text(size=15),
-          legend.margin=margin(0,0,0,0),
-          legend.box.margin=margin(-10,0,-10,-10))
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=9),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.title = element_blank(),
+          legend.position = 'bottom',
+          legend.box.margin=margin(-25,0,-10,-10))+
+    ggtitle(Title)
 }
 
-fn.pef.ind.boxplot=function(df)
+fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
 {
   df%>%
     ggplot(aes(Scenario,Value,fill=Scenario))+
+    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
     geom_violin(alpha=0.3)+
     geom_boxplot(alpha=0.8,width=0.1)+
-    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
     facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
-    ylab('Indicator value')+xlab('')+
+    ylab(YLAB)+xlab('')+
     theme_bw()%+replace% 
     theme(panel.grid.minor = element_blank(),
-          strip.text.x = element_text(size=15),
-          axis.text = element_text(size=12),
-          axis.title = element_text(size=19),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=9),
+          axis.title = element_text(size=14),
+          plot.title = element_text(size=15,hjust=0),
           legend.position = 'none',
-          legend.margin=margin(0,0,0,0))
+          legend.margin=margin(0,0,0,0))+
+    ggtitle(Title)
 }
