@@ -27,6 +27,92 @@ fn.right.format=function(x,var)
            spread(parameter,variable,fill=0)%>%
            mutate(P_7=0,P_8=0))
 }
+my_theme=function(Ttl.siz=18,Sbt.siz=16,str.siz=12,strx.siz=12,cap.siz=10,
+                  lgT.siz=14,leg.siz=12,axs.t.siz=10,axs.T.siz=14)
+{
+  #font<-windowsFonts("Arial" = windowsFont("Arial"))
+  #font="Arial"  #"TT Courier New"  "TT Arial"  "TT Times New Roman"
+  theme_bw()%+replace% 
+    theme(
+      
+      #panel
+      panel.background = element_blank(),
+      panel.border = element_rect(colour = "black", fill=NA, linewidth=1.15),
+      
+      #grid elements
+      panel.grid.major = element_blank(),    #strip major gridlines
+      panel.grid.minor = element_blank(),    #strip minor gridlines
+      axis.line = element_line(colour = "black"),
+      #axis.ticks = element_line(),          #strip axis ticks
+      
+      # strip background
+      strip.background = element_rect(
+        fill = "grey90",
+        colour = "grey90"),
+      
+      #text elements
+      #title
+      plot.title = element_text(             
+        # family = font,                           
+        size = Ttl.siz,                         
+        face = 'bold',                           #bold typeface
+        hjust = 0,                               #left align
+        vjust = 2),                              #raise slightly
+      
+      #subtitle
+      plot.subtitle = element_text(          
+        # family = font,                           
+        size = Sbt.siz,
+        hjust = 0,                               #left align
+        vjust = 2),                         
+      
+      #strip legend
+      strip.text = element_text(
+        # family = font,
+        size = str.siz),
+      strip.text.x = element_text(
+        # family = font,
+        size = strx.siz,
+        margin = margin(.1,0,.1,0, "cm")),
+      
+      
+      #caption
+      plot.caption = element_text(          
+        # family = font,                           
+        size = cap.siz,                          
+        hjust = 1),                             #right align
+      
+      #legend
+      legend.title=element_text(
+        # family = font,
+        size=lgT.siz),
+      legend.text=element_text(
+        # family = font,
+        size=leg.siz),
+      
+      #axis titles
+      axis.title = element_text(             
+        # family = font,                          
+        size = axs.T.siz),                     
+      
+      #axis text
+      axis.text = element_text(              
+        # family = font,                          
+        size = axs.t.siz)                       
+    )
+}
+
+fn.ktch.perf.ind=function(ktch)
+{
+  ktch=subset(ktch,!is.na(ktch))
+  ktch.var=data.frame(C=ktch)%>%
+    mutate(C.prev=lag(C),
+           C.delta=abs(C-C.prev))%>%
+    filter(!is.na(C.prev))
+  AAV=100*sum(ktch.var$C.delta)/sum(ktch.var$C)
+  return(list(AAV=AAV,Total=sum(ktch)))
+}
+
 # SSMSE -----------------------------------------------------------------
 fn.create.SSMSE.files=function(sp_path_assessment,sp_path_OM,sp_path_EM,Scen,block.pattern)
 {
@@ -493,6 +579,37 @@ fn.run.SSSMSE=function(Scen,sp_path_OM,sp_path_EM,sp_path_out,Nsims,proj.yrs,
   return(out[[1]])
 }
 
+check_convergence_SSMSE <- function(summary, min_yr, max_yr)
+{
+  #require(dplyr) # note: not the best way to do this
+  if (any(!is.na(summary$scalar$params_on_bound))) {
+    warning("Params on bounds")
+  } else {
+    message("No params on bounds")
+  }
+  summary$ts$model_type <- ifelse(grepl("_EM_", summary$ts$model_run), "EM", "OM")
+  calc_SSB <- summary$ts %>%
+    filter(year >= min_yr & year <= max_yr) %>%
+    select(iteration, scenario, year, model_run, model_type, SpawnBio)
+  OM_vals <- calc_SSB %>%
+    filter(model_type == "OM") %>%
+    rename(SpawnBio_OM = SpawnBio) %>%
+    select(iteration, scenario, year, SpawnBio_OM)
+  EM_vals <- calc_SSB %>%
+    filter(model_type == "EM") %>%
+    rename(SpawnBio_EM = SpawnBio) %>%
+    select(iteration, scenario, year, model_run, SpawnBio_EM)
+  bind_vals <- full_join(EM_vals, OM_vals, by = c("iteration", "scenario", "year")) %>%
+    mutate(SSB_ratio = SpawnBio_EM / SpawnBio_OM)
+  filter_SSB <- bind_vals %>%
+    filter(SSB_ratio > 2 | SSB_ratio < 0.5)
+  if (nrow(filter_SSB) > 0) {
+    warning("Some large/small SSBs relative to OM")
+  } else {
+    message("All SSBs in EM are no greater than double and no less than half SSB vals in the OM")
+  }
+  return_val <- bind_vals
+}
 
 # RatPack -----------------------------------------------------------------
 SS_readRatPack.object=function (file) 
@@ -823,33 +940,46 @@ fn.percentiles=function(d,grouping,var)
                      ymax=quantile(!!as.name(var), probs=0.9, na.rm=TRUE)))
 }
 
-fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
+fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 {
-  p=data%>%
-    ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
-    geom_col(width = 1, color = "white") + 
-    facet_wrap(~Scenario)+
-    coord_curvedpolar()+
-    labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
-    theme_minimal()%+replace% 
-    theme(legend.title = element_blank(),
+  df%>%
+    ggplot(aes(Value,fill=Scenario))+
+    geom_density(adjust=2,alpha=0.4)+
+    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+xlim(0,1.1)+
+    ylab(YLAB)+xlab('')+
+    my_theme()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=9),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.key.width = unit(0.5, "cm"),
+          legend.title = element_blank(),
           legend.position = 'bottom',
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          axis.ticks = element_blank(),
-          axis.text.x = element_blank(),
-          axis.text.y = element_blank(),
-          plot.subtitle = element_text(size = 12),
-          panel.grid.minor = element_blank(),
-          strip.text.x = element_text(size=16),
-          axis.text = element_text(size=12),
-          axis.title = element_text(size=16),
-          plot.title = element_text(size=20,hjust=0),
-          legend.text = element_text(size=15),
-          plot.margin = unit(c(0, 0, 0, 0), "cm"),
-          legend.margin=margin(0,0,0,0),
-          legend.box.margin=margin(-10,0,-10,-10))
-  return(p)
+          legend.box.margin=margin(-25,0,-10,-10))+
+    ggtitle(Title)
+}
+
+fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
+{
+  df%>%
+    ggplot(aes(Scenario,Value,fill=Scenario))+
+    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
+    geom_violin(alpha=0.3)+
+    geom_boxplot(alpha=0.8,width=0.1)+
+    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
+    ylab(YLAB)+xlab('')+
+    my_theme()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=9),
+          axis.title = element_text(size=14),
+          plot.title = element_text(size=15,hjust=0),
+          legend.position = 'none',
+          legend.margin=margin(0,0,0,0))+
+    ggtitle(Title)
 }
 
 kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.col,YrSize,
@@ -949,6 +1079,35 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
   return(kobe)
 }
 
+fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
+{
+  p=data%>%
+    ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
+    geom_col(width = 1, color = "white") + 
+    facet_wrap(~Scenario)+
+    coord_curvedpolar()+
+    labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
+    my_theme()%+replace% 
+    theme(legend.title = element_blank(),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          plot.subtitle = element_text(size = 12),
+          panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=16),
+          axis.text = element_text(size=12),
+          axis.title = element_text(size=16),
+          plot.title = element_text(size=20,hjust=0),
+          legend.text = element_text(size=15),
+          plot.margin = unit(c(0, 0, 0, 0), "cm"),
+          legend.margin=margin(0,0,0,0),
+          legend.box.margin=margin(-10,0,-10,-10))
+  return(p)
+}
+
 fn.quilt.plot=function(df,clr.scale,col.breaks,Titl)
 {
   color_df=df
@@ -958,57 +1117,18 @@ fn.quilt.plot=function(df,clr.scale,col.breaks,Titl)
   color_df=t(color_df)
   
   my_table_theme <- ttheme_default(core=list(fg_params=list(col='grey20'),bg_params = list(fill = unlist(color_df), col=NA)))
-  #plot.new()
-  #grid.table(df, theme = my_table_theme)
+  Delta= -0.3
+  if(ncol(df)==10) Delta=-0.15
+  if(ncol(df)==9) Delta=-0.25
   G <- ggplot() +
+    geom_point(aes(x=0:1,y=0:1),color='transparent')+
     theme_void() +
     annotation_custom(gridExtra::tableGrob(df, theme = my_table_theme),
-                      xmin = -Inf,
-                      xmax = Inf,
-                      ymin = -Inf,
-                      ymax = Inf)+
+                      xmin = Delta,#-Inf,
+                      xmax = 1, #Inf,
+                      ymin = 0, #-Inf,
+                      ymax = 1)+ #Inf)
     ggtitle(Titl)+
     theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   return(G)
-}
-
-fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
-{
-  df%>%
-    ggplot(aes(Value,fill=Scenario))+
-    geom_density(adjust=2,alpha=0.4)+
-    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+xlim(0,1.1)+
-    ylab(YLAB)+xlab('')+
-    theme_bw()%+replace% 
-    theme(panel.grid.minor = element_blank(),
-          strip.text.x = element_text(size=11),
-          axis.text = element_text(size=9),
-          plot.title = element_text(size=15,hjust=0),
-          axis.title = element_text(size=14),
-          legend.spacing.x = unit(0.05, 'cm'),
-          legend.text = element_text(size=8),
-          legend.title = element_blank(),
-          legend.position = 'bottom',
-          legend.box.margin=margin(-25,0,-10,-10))+
-    ggtitle(Title)
-}
-
-fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
-{
-  df%>%
-    ggplot(aes(Scenario,Value,fill=Scenario))+
-    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
-    geom_violin(alpha=0.3)+
-    geom_boxplot(alpha=0.8,width=0.1)+
-    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
-    ylab(YLAB)+xlab('')+
-    theme_bw()%+replace% 
-    theme(panel.grid.minor = element_blank(),
-          strip.text.x = element_text(size=11),
-          axis.text = element_text(size=9),
-          axis.title = element_text(size=14),
-          plot.title = element_text(size=15,hjust=0),
-          legend.position = 'none',
-          legend.margin=margin(0,0,0,0))+
-    ggtitle(Title)
 }

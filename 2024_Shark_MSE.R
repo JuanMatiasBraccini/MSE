@@ -64,6 +64,7 @@ source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
 fn.source("2024_Shark_auxiliary functions.R")
 
+
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
 
@@ -112,20 +113,13 @@ First.Run.RatPack=FALSE                # set to TRUE to generate OPD,HSE and pro
 run.RatPack=FALSE                      # set to TRUE to run RatPack
 niters <- 2                            # number of simulations per scenario (100)
 assessment.year=2022                   # year latest stock assessment 
+last.year.obs.catch=2021               # last year with observed catch
 Proj.years=10                          # number of projected years (25)
 Proj.years.between.ass=4               # years between assessments in the projected period
 Proj.years.obs=seq(1,Proj.years,by=1)  # sampled years in the projected period
 Proj.assessment.years=seq((assessment.year+1),(assessment.year+Proj.years),Proj.years.between.ass)[-1]
 proj.CV=0.2                            # CV in the projected period
 Proj.Effective.pop.size.future=100     #projection length comp sample size
-theme_set(theme_light() +
-            theme(panel.grid.major.x = element_blank(),
-                  panel.grid.minor = element_blank(),
-                  panel.grid.major.y = element_blank(),
-                  strip.background = element_rect(fill="white"),
-                  strip.text = element_text(colour = 'black'),
-                  text = element_text(family = "Calibri", size = 12)))
-
 Keep.species=sort(unique(Operating_models$Species))
 N.sp=length(Keep.species)
 species_logistic.selectivity.NSF=sort(unique(Operating_models%>%filter(!is.na(NSF.selectivity))%>%pull(Species)))  
@@ -135,6 +129,14 @@ subset.scenarios=TRUE  #test scenario grid?? way time consuming
 
 RiskColors=c('Negligible'="cornflowerblue", 'Low'="chartreuse3", 'Medium'="yellow1",
              'High'="orange", 'Severe'="brown1")
+
+theme_set(theme_light() +
+            theme(panel.grid.major.x = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  panel.grid.major.y = element_blank(),
+                  strip.background = element_rect(fill="white"),
+                  strip.text = element_text(colour = 'black'),
+                  text = element_text(family = "Calibri", size = 12)))
 
 # Create relevant directories and handles for each MSE framework  ---------------
   #SSMSE
@@ -190,6 +192,7 @@ for(i in 1:N.sp)
 Not.tested.in.Rat.Pack='rep.cycle' #cannot test rep cycle in RatPack
 
 # Run SSMSE loop over each species-scenario combination ---------------
+#note: remove iterations within Outputs/Scenario folder
 Current.fleets=fn.create.list(Keep.species)
 Current.fleets$`Gummy shark`=Current.fleets$`Whiskery shark`=c("Other","Southern.shark_2")
 Current.fleets$`Dusky shark`=Current.fleets$`Sandbar shark`=c("Other","Southern.shark_2","Survey")
@@ -265,6 +268,7 @@ if(run.SSMSE)
     sp_path_OM=paste(out.path.SSMSE,Keep.species[i],'OM',sep='/')
     sp_path_EM=paste(out.path.SSMSE,Keep.species[i],'EM',sep='/')
     sp_path_out=paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/')
+    
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
@@ -413,21 +417,49 @@ write.csv(do.call(rbind,Tab.HCR.scens),paste0(outs.path,'/Table 1.Scenarios_HCR_
 
 
 # Report SSMSE outputs  ----------------------------------------------------------
+OVERWRITE=FALSE #set to TRUE if SSMSE is re run, otherwise set to FALSE to speed up reporting
 if(run.SSMSE)
 {
   output_dis.pi.list=fn.create.list(Keep.species)
-  output_boxplot.pi.list=output_quilt.list=output_dis.pi.list
+  Check.SSMSE.convergence=Get.SSMSE.perf.indic=output_boxplot.pi.list=output_quilt.list=output_dis.pi.list
   tic()
   for(i in 1:N.sp)
   {
     print(paste('SSMSE create figures for ',Keep.species[i],'-----------'))
     Scenarios=SCENARIOS[[i]]
     
+    #1. Extract quantities
+    summary <- SSMSE_summary_all(paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/'),overwrite = OVERWRITE)
+    
+      #1.1 Performance indicators
+    BMSY=median(summary$scalar$SSB_MSY,na.rm=T)
+    FMSY=median(summary$scalar$F_MSY,na.rm=T)
+    Get.SSMSE.perf.indic[[i]]=summary$dq%>%
+      rename(Recruits=Value.Recr,
+             SSB=Value.SSB,
+             Depletion=Value.Bratio,
+             Catch=Value.ForeCatch)%>%
+      mutate(model_run=sub(".*?_", "", model_run),
+             B.over.BMSY=SSB/BMSY,
+             F.over.FMSY=Value.F/FMSY,)%>%
+      dplyr::select(c(model_run,iteration,scenario,year,F.over.FMSY,B.over.BMSY,any_of(Perform.ind)))
+    
+    
+    #fn.ktch.perf.ind(ktch=)  #calculates total catch and variability by simulation. Get the median as PI
+    
+    
+      #1.2 Check convergence
+    Check.SSMSE.convergence[[i]] <- check_convergence_SSMSE(summary = summary,
+                                                            min_yr = last.year.obs.catch+1,
+                                                            max_yr = last.year.obs.catch+Proj.years)
+    
     #Save Kobe plot
     scen.list_kobe=fn.create.list(Scenarios$Scenario)
     for(s in 1:nrow(Scenarios))
     {
-      scen.list_kobe[[s]]=kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),   #ACA: replace with real x and y outputs
+      f.traj=Get.SSMSE.perf.indic[[i]]%>%  #ACA: extra median series across iters and probs for scenario last EM
+                filter(scenario=Scenarios$Scenario[s])
+      scen.list_kobe[[s]]=kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),   # replace with real x and y outputs
                                    b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
                                    Years=1:11,
                                    Titl=Scenarios$Scenario[s],
@@ -478,9 +510,11 @@ if(run.SSMSE)
     
     #Save quilt plot
     #ACA: first must calculate relative value of each indicator for each scenario
-    output_quilt.list[[i]]=fn.quilt.plot(df=data.frame(Indicator1=sample(seq(0,1,.1),10),   #ACA: replace with real x and y outputs (rescaled 0:1)
-                                                      Indicator2=sample(seq(0,1,.1),10))%>%
-                                                      `rownames<-`(paste0('S',1:10)),
+    output_quilt.list[[i]]=fn.quilt.plot(df=expand.grid(Per.ind=Perform.ind,Scenario=Scenarios$Scenario)%>%arrange(Per.ind)%>%
+                                           mutate(N=sample(seq(0,1,.1),n(),replace=T))%>%
+                                           spread(Per.ind,N)%>%
+                                           `rownames<-`(Scenarios$Scenario)%>%
+                                           dplyr::select(-Scenario),
                                         clr.scale=colorRampPalette(c('white','cadetblue2','cornflowerblue')),
                                         col.breaks=50,
                                         Titl=Keep.species[i]) 
@@ -492,15 +526,15 @@ if(run.SSMSE)
   #Output combined distribution of performance indicators
   ggarrange(plotlist = output_dis.pi.list,nrow=1,common.legend = FALSE)%>%
     annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
-  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_SSMSE.tiff'),width = 9,height = 10,compression = "lzw")
+  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_SSMSE.tiff'),width = 10.5,height = 8,compression = "lzw")
   
   ggarrange(plotlist = output_boxplot.pi.list,nrow=1)%>%
     annotate_figure(left = textGrob('Indicator value', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
-  ggsave(paste0(outs.path,'/1_Perf_indicator_box.plot_SSMSE.tiff'),width = 9,height = 10,compression = "lzw")
+  ggsave(paste0(outs.path,'/1_Perf_indicator_box.plot_SSMSE.tiff'),width = 10,height = 8,compression = "lzw")
   
   #Output combined quilt plot
   ggarrange(plotlist = output_quilt.list,ncol=1)
-  ggsave(paste0(outs.path,'/4_Quilt.plot_SSMSE.tiff'),width = 6,height = 6,compression = "lzw")
+  ggsave(paste0(outs.path,'/4_Quilt.plot_SSMSE.tiff'),width = 6,height = 10,compression = "lzw")
 
   
   #Missing. Add time series of key performance indicators and display like '1_Perf_indicator_distribution.plot_SSMSE'
