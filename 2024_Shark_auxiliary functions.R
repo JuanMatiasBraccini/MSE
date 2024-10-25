@@ -940,6 +940,28 @@ fn.percentiles=function(d,grouping,var)
                      ymax=quantile(!!as.name(var), probs=0.9, na.rm=TRUE)))
 }
 
+fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
+{
+  df%>%
+    ggplot(aes(year,Value,color=iteration))+     #ACA, add every iteration in grey and median in organge
+    geom_line(alpha=0.4)+
+    facet_grid(Perf.ind~scenario,scales = 'free')+
+    ylab(YLAB)+xlab('')+
+    my_theme()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=9),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.key.width = unit(0.5, "cm"),
+          legend.title = element_blank(),
+          legend.position = 'bottom',
+          legend.box.margin=margin(-25,0,-10,-10))+
+    ggtitle(Title)
+}
+
 fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 {
   df%>%
@@ -1076,13 +1098,14 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
   }
   if(!show.marginal.density) kobe=kobe+labs(title = Titl)
   
-  return(kobe)
+  
+  return(list(kobe=kobe,prob.green=Pr.d[rownames(Pr.d)=='Low','Prob'] ))
 }
 
 fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
 {
   p=data%>%
-    ggplot(aes(x = Indicator, y = value,fill = factor(Indicator))) +
+    ggplot(aes(x = Indicator, y = value,fill = Indicator)) +
     geom_col(width = 1, color = "white") + 
     facet_wrap(~Scenario)+
     coord_curvedpolar()+
@@ -1108,7 +1131,7 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
   return(p)
 }
 
-fn.quilt.plot=function(df,clr.scale,col.breaks,Titl)
+fn.quilt.plot=function(df,clr.scale,col.breaks,Titl,Delta)
 {
   color_df=df
   for(x in 1:ncol(color_df)) color_df[,x]=clr.scale(col.breaks)[as.numeric(cut(color_df[,x],breaks = col.breaks))]
@@ -1117,9 +1140,6 @@ fn.quilt.plot=function(df,clr.scale,col.breaks,Titl)
   color_df=t(color_df)
   
   my_table_theme <- ttheme_default(core=list(fg_params=list(col='grey20'),bg_params = list(fill = unlist(color_df), col=NA)))
-  Delta= -0.3
-  if(ncol(df)==10) Delta=-0.15
-  if(ncol(df)==9) Delta=-0.25
   G <- ggplot() +
     geom_point(aes(x=0:1,y=0:1),color='transparent')+
     theme_void() +

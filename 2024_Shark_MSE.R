@@ -91,6 +91,8 @@ Operating_models=read_excel(hndl.mse.comp,       sheet = "Operating model",skip 
 Management_scenarios=read_excel(hndl.mse.comp,   sheet = "Estimation model",skip = 0)
 
 Perform.ind=Management_objectives%>%filter(Used.in.MSE=='Yes')%>%distinct(Perf.ind.name,.keep_all = T)%>%pull(Perf.ind.name)
+Perform.ind.levels=c("Recruits","SSB","Depletion","F/FMSY","B/BMSY","Total catch","Catch variability")
+Perform.ind.levels2=c("Recruits","SSB","Depletion","Kobe","Total catch","Catch variability")  
 
   #Historic catch ranges
 Target.commercial.catch=Management_objectives%>%
@@ -421,20 +423,22 @@ OVERWRITE=FALSE #set to TRUE if SSMSE is re run, otherwise set to FALSE to speed
 if(run.SSMSE)
 {
   output_dis.pi.list=fn.create.list(Keep.species)
-  Check.SSMSE.convergence=Get.SSMSE.perf.indic=output_boxplot.pi.list=output_quilt.list=output_dis.pi.list
+  Check.SSMSE.convergence=Get.SSMSE.perf.indic=Get.SSMSE.timeseries.perf.indic=output_boxplot.pi.list=
+    output_quilt.list=output_dis.pi.list
+  
   tic()
+  #1. Extract quantities
   for(i in 1:N.sp)
   {
-    print(paste('SSMSE create figures for ',Keep.species[i],'-----------'))
+    print(paste('SSMSE extract quantities for ',Keep.species[i],'-----------'))
     Scenarios=SCENARIOS[[i]]
     
-    #1. Extract quantities
     summary <- SSMSE_summary_all(paste(out.path.SSMSE,Keep.species[i],'Outputs',sep='/'),overwrite = OVERWRITE)
     
       #1.1 Performance indicators
     BMSY=median(summary$scalar$SSB_MSY,na.rm=T)
     FMSY=median(summary$scalar$F_MSY,na.rm=T)
-    Get.SSMSE.perf.indic[[i]]=summary$dq%>%
+    temp.d=summary$dq%>%
       rename(Recruits=Value.Recr,
              SSB=Value.SSB,
              Depletion=Value.Bratio,
@@ -444,33 +448,108 @@ if(run.SSMSE)
              F.over.FMSY=Value.F/FMSY,)%>%
       dplyr::select(c(model_run,iteration,scenario,year,F.over.FMSY,B.over.BMSY,any_of(Perform.ind)))
     
+    out.dumi=fn.create.list(Scenarios$Scenario)
+    for(s in 1:nrow(Scenarios))
+    {
+      d=temp.d%>%  
+        filter(scenario==Scenarios$Scenario[s] & !model_run%in%c('EM_init','OM'))%>%
+        mutate(dumi=as.numeric(sub(".*?_", "", model_run)))%>%
+        filter(dumi==max(dumi))
+     
+      f.traj=d%>%group_by(year)%>%summarise(f.traj=median(F.over.FMSY))
+      b.traj=d%>%group_by(year)%>%summarise(b.traj=median(B.over.BMSY))
+      
+      out.dumi[[s]]=list(f.traj=f.traj$f.traj,   
+                         b.traj=b.traj$b.traj,
+                         Years=f.traj$year,
+                         Probs=data.frame(x=d%>%filter(year==max(year))%>%pull(B.over.BMSY),
+                                          y=d%>%filter(year==max(year))%>%pull(F.over.FMSY)))
+      rm(d)
+    }
+    Get.SSMSE.perf.indic[[i]]=list(Kobe=out.dumi)
     
-    #fn.ktch.perf.ind(ktch=)  #calculates total catch and variability by simulation. Get the median as PI
+    temp.d=temp.d%>%  
+            filter(!model_run%in%c('EM_init','OM'))%>%
+            mutate(dumi=as.numeric(sub(".*?_", "", model_run)))%>%
+            filter(dumi==max(dumi))
+    
+    Get.SSMSE.timeseries.perf.indic[[i]]=temp.d
+    
+      #extract values
+    a=temp.d%>%
+      filter(year==max(year))%>%
+      dplyr::select(c(scenario,any_of(Perform.ind),F.over.FMSY,B.over.BMSY))%>%
+      rename(Scenario=scenario)%>%
+      gather(Perf.ind,Value,-Scenario)%>%
+      filter(!Perf.ind=='Catch')
+    
+      #calculates total catch and catch variability 
+    Katch.tot.perf.ind=Katch.var.perf.ind=fn.create.list(Scenarios$Scenario)
+    for(s in 1:nrow(Scenarios))
+    {
+      katch=temp.d%>%
+        filter(scenario==Scenarios$Scenario[s])%>%
+        dplyr::select(Catch,iteration,year)%>%
+        filter(!is.na(Catch))
+      iter=sort(unique(katch$iteration))
+      Tot.ktch=fn.create.list(iter)
+      AAV.ktch=Tot.ktch
+      for(x in 1:length(iter))
+      {
+        dd=fn.ktch.perf.ind(ktch=katch%>%filter(iteration==iter[x])%>%pull(Catch))
+        Tot.ktch[[x]]=data.frame(Value=dd$Total)%>%
+                            mutate(Perf.ind='Total catch', Scenario=Scenarios$Scenario[s])%>%
+                            relocate(Scenario,Perf.ind,Value)
+        AAV.ktch[[x]]=data.frame(Value=dd$AAV)%>%
+                      mutate(Perf.ind='Catch variability', Scenario=Scenarios$Scenario[s])%>%
+                      relocate(Scenario,Perf.ind,Value)
+      }
+      Katch.var.perf.ind[[s]]=do.call(rbind,AAV.ktch)
+      Katch.tot.perf.ind[[s]]=do.call(rbind,Tot.ktch)
+    }
+    Katch.var.perf.ind=do.call(rbind,Katch.var.perf.ind)
+    Katch.tot.perf.ind=do.call(rbind,Katch.tot.perf.ind)
+
+    Get.SSMSE.perf.indic[[i]]$perf.ind.values=rbind(a,Katch.var.perf.ind,Katch.tot.perf.ind)%>%
+                                                      mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
+                                                                      ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                                                                             Perf.ind)),
+                                                             Perf.ind=factor(Perf.ind,levels=Perform.ind.levels))
     
     
-      #1.2 Check convergence
+    #1.2 Check convergence
     Check.SSMSE.convergence[[i]] <- check_convergence_SSMSE(summary = summary,
                                                             min_yr = last.year.obs.catch+1,
                                                             max_yr = last.year.obs.catch+Proj.years)
     
-    #Save Kobe plot
+    rm(temp.d,a,Katch.var.perf.ind,Katch.tot.perf.ind)
+  }
+  
+  #2. Plot figures
+  delt=c(-0.175,-0.2,-0.2,-0.2)  
+  for(i in 1:N.sp)
+  {
+    print(paste('SSMSE create figures for ',Keep.species[i],'-----------'))
+    Scenarios=SCENARIOS[[i]]
+      
+    #2.1 Kobe plot
     scen.list_kobe=fn.create.list(Scenarios$Scenario)
+    scen.list_kobe.prob.green=scen.list_kobe
     for(s in 1:nrow(Scenarios))
     {
-      f.traj=Get.SSMSE.perf.indic[[i]]%>%  #ACA: extra median series across iters and probs for scenario last EM
-                filter(scenario=Scenarios$Scenario[s])
-      scen.list_kobe[[s]]=kobePlot(f.traj=c(0,0.1,0.15,0.25,0.6,0.8,1,1.1,1.5,1.1,0.9),   # replace with real x and y outputs
-                                   b.traj=c(2,1.8,1.6,1.4,1.2,1.1,1,0.7,0.5,0.8,0.9),
-                                   Years=1:11,
+      xx=kobePlot(f.traj=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$f.traj,
+                                   b.traj=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$b.traj,
+                                   Years=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Years,
                                    Titl=Scenarios$Scenario[s],
-                                   Probs=data.frame(x=rnorm(1e3,0.9,0.05),  #ACA: replace with real x and y probs for final year
-                                                     y=rnorm(1e3,0.9,0.05)),
+                                   Probs=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Probs,
                                    pt.size=2.5,
                                    txt.col='transparent',
                                    line.col='black',
                                    YrSize=4,
                                    YLAB='', XLAB='',
                                    Leg.txt.size=10)
+      scen.list_kobe[[s]]=xx$kobe
+      scen.list_kobe.prob.green[[s]]=data.frame(Scenario=Scenarios$Scenario[s],Prob=xx$prob.green)
       
     } #end s
     wid=6.5
@@ -486,44 +565,61 @@ if(run.SSMSE)
     ggsave(paste0(outs.path,'/2_Kobe_SSMSE_',Keep.species[i],'.tiff'),width = wid,height = 12,compression = "lzw")
     
 
-    #Save distribution of performance indicators   Perform.ind
-    #ACA: first must calculate relative value of each indicator for each scenario
-    N.dumi=100  #delete
-    output_dis.pi.list[[i]]=fn.perf.ind.dist(df=expand.grid(Scenario=rep(Scenarios$Scenario,each=N.dumi),    #aca replace with real density for final year
-                                                          Perf.ind=Perform.ind)%>%
-                                              mutate(Value=sample(x=seq(0,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind)*N.dumi,replace=T)),
+    #2.2 Distribution of performance indicators   
+    output_dis.pi.list[[i]]=fn.perf.ind.dist(df=Get.SSMSE.perf.indic[[i]]$perf.ind.values,
                                             YLAB='',
                                             Title=Keep.species[i])
-    output_boxplot.pi.list[[i]]=fn.perf.ind.boxplot(df=expand.grid(Scenario=rep(Scenarios$Scenario,each=N.dumi),    #aca replace with real density for final year
-                                                                   Perf.ind=Perform.ind)%>%
-                                                      mutate(Value=sample(x=seq(0,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind)*N.dumi,replace=T)),
+    output_boxplot.pi.list[[i]]=fn.perf.ind.boxplot(df=Get.SSMSE.perf.indic[[i]]$perf.ind.values,
                                                    YLAB='',
                                                    Title=Keep.species[i])        
     
-    #Save performance indicator polar plots
-    fn.polar.plot(data= expand.grid(Scenario=Scenarios$Scenario,    #aca replace with real values
-                                    Indicator=Perform.ind)%>%
-                              mutate(value=sample(x=seq(0.1,1,by=0.1),size=length(Scenarios$Scenario)*length(Perform.ind),replace=T)),
-                  Title= "")
+    #2.3 Performance indicator polar plots
+    Kobe.per.ind=do.call(rbind,scen.list_kobe.prob.green)%>%
+      mutate(Perf.ind='Kobe')%>%mutate(value=Prob/100)%>%dplyr::select(-Prob)%>%
+      relocate(Scenario,Perf.ind,value)
+    Per.ind.scaled=Get.SSMSE.perf.indic[[i]]$perf.ind.values%>%
+                        group_by(Scenario,Perf.ind)%>%
+                        summarise(value=median(Value))
+    
+    Per.ind.scaled=rbind(Per.ind.scaled%>%
+                           filter(!Perf.ind%in%c('F/FMSY','B/BMSY')),
+                         Kobe.per.ind)%>%
+                    mutate(Perf.ind=factor(Perf.ind,levels=Perform.ind.levels2))%>%  
+                         group_by(Perf.ind)%>%
+                    mutate(value.rescaled=value/max(value))%>%
+                rename(Indicator=Perf.ind,
+                       value.orig=value,
+                       value=value.rescaled)%>%
+              arrange(Indicator)
+    fn.polar.plot(data= Per.ind.scaled, Title= "")
     ggsave(paste0(outs.path,'/3_Polar.plot_SSMSE_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
     
     
-    #Save quilt plot
-    #ACA: first must calculate relative value of each indicator for each scenario
-    output_quilt.list[[i]]=fn.quilt.plot(df=expand.grid(Per.ind=Perform.ind,Scenario=Scenarios$Scenario)%>%arrange(Per.ind)%>%
-                                           mutate(N=sample(seq(0,1,.1),n(),replace=T))%>%
-                                           spread(Per.ind,N)%>%
-                                           `rownames<-`(Scenarios$Scenario)%>%
-                                           dplyr::select(-Scenario),
+    #2.4 Quilt plot
+    output_quilt.list[[i]]=fn.quilt.plot(df=Per.ind.scaled%>%
+                                               data.frame()%>%
+                                           dplyr::select(-value)%>%
+                                           mutate(value=ifelse(Indicator%in%c('Recruits','Total catch','SSB'),
+                                                               round(value.orig),round(value.orig,1)))%>%
+                                               dplyr::select(-value.orig)%>%
+                                               spread(Indicator,value)%>%
+                                               `rownames<-`(Scenarios$Scenario)%>%
+                                               dplyr::select(-Scenario),
                                         clr.scale=colorRampPalette(c('white','cadetblue2','cornflowerblue')),
                                         col.breaks=50,
-                                        Titl=Keep.species[i]) 
+                                        Titl=Keep.species[i],
+                                        Delta=delt[i]) 
     
-
+    #2.5 Time series of performance indicators #ACA
+    output_dis.pi.list[[i]]=fn.perf.ind.time.series(df=Get.SSMSE.timeseries.perf.indic[[i]]%>%
+                                                      dplyr::select(-c(dumi,model_run))%>%
+                                                      gather(Perf.ind,Value,-c(iteration,scenario,year)),
+                                                    YLAB='',
+                                                    Title=Keep.species[i])
     
   } #end i
   
-  #Output combined distribution of performance indicators
+  #3. Output combined distribution of performance indicators
   ggarrange(plotlist = output_dis.pi.list,nrow=1,common.legend = FALSE)%>%
     annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
   ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_SSMSE.tiff'),width = 10.5,height = 8,compression = "lzw")
