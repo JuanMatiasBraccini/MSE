@@ -943,31 +943,45 @@ fn.percentiles=function(d,grouping,var)
 fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
 {
   df%>%
-    ggplot(aes(year,Value,color=iteration))+     #ACA, add every iteration in grey and median in organge
+    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))),
+           Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
+                    ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                    ifelse(Perf.ind=='Catch','Total catch',
+                    Perf.ind))),
+           Perf.ind=factor(Perf.ind,levels=Perform.ind.levels),
+           iteration=as.character(iteration))%>%
+    filter(!is.na(Value))%>%
+    group_by(year,Perf.ind,Scenario)%>%mutate(Median=median(Value,na.rm=T))%>%
+    ggplot(aes(year,Value,color=iteration))+    
     geom_line(alpha=0.4)+
-    facet_grid(Perf.ind~scenario,scales = 'free')+
+    geom_line(aes(year,Median),color='chocolate3',size=.95)+
+    ggh4x::facet_grid2(Perf.ind~Scenario,scales = TRUE, independent = "x",drop=TRUE)+
     ylab(YLAB)+xlab('')+
     my_theme()%+replace% 
     theme(panel.grid.minor = element_blank(),
           strip.text.x = element_text(size=11),
-          axis.text = element_text(size=9),
+          axis.text = element_text(size=8),
           plot.title = element_text(size=15,hjust=0),
           axis.title = element_text(size=14),
           legend.spacing.x = unit(0.05, 'cm'),
           legend.text = element_text(size=8),
           legend.key.width = unit(0.5, "cm"),
           legend.title = element_blank(),
-          legend.position = 'bottom',
-          legend.box.margin=margin(-25,0,-10,-10))+
-    ggtitle(Title)
+          legend.position = 'none',
+          legend.box.margin=margin(-25,0,-10,-10),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+
+    ggtitle(Title)+
+    scale_color_manual(values=rep("grey70", length(unique(df$iteration))))+
+    expand_limits(y=0)
 }
 
 fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 {
   df%>%
+    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
     ggplot(aes(Value,fill=Scenario))+
     geom_density(adjust=2,alpha=0.4)+
-    facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+xlim(0,1.1)+
+    facet_wrap(~Perf.ind,ncol=1,scales = 'free')+
     ylab(YLAB)+xlab('')+
     my_theme()%+replace% 
     theme(panel.grid.minor = element_blank(),
@@ -987,6 +1001,7 @@ fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
 {
   df%>%
+    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
     ggplot(aes(Scenario,Value,fill=Scenario))+
     geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
     geom_violin(alpha=0.3)+
@@ -1105,9 +1120,10 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
 fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
 {
   p=data%>%
-    ggplot(aes(x = Indicator, y = value,fill = Indicator)) +
+    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    ggplot(aes(x = Scenario, y = value,fill = Scenario)) +
     geom_col(width = 1, color = "white") + 
-    facet_wrap(~Scenario)+
+    facet_wrap(~Indicator)+
     coord_curvedpolar()+
     labs(x = "", y = "",  title = Title, subtitle = Subtitle, caption = Caption) + 
     my_theme()%+replace% 
