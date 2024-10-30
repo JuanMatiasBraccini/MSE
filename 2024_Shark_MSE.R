@@ -51,6 +51,7 @@ library(patchwork)
 library(flextable)
 library(grid)
 library(ggh4x)
+library(ggthemes)
 
 #library(Hmisc)
 set.lib.path=TRUE
@@ -65,6 +66,9 @@ source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
 fn.source("2024_Shark_auxiliary functions.R")
 
+# source the ratpack data script (it's on Bitbucket)
+source(handl_OneDrive('Workshops/2024_Andre Punt_MSE/Software/ratpackmser/R/read_and_plot_ratpack_output.R'))
+source(handl_OneDrive('Workshops/2024_Andre Punt_MSE/Software/ratpackmser/R/Buffer_analysis_functions.R'))
 
 #SS files used in stock assessments
 in.path=handl_OneDrive("Analyses/Population dynamics")  #path to SS3 stock assessments files 
@@ -200,7 +204,7 @@ Current.fleets=fn.create.list(Keep.species)
 Current.fleets$`Gummy shark`=Current.fleets$`Whiskery shark`=c("Other","Southern.shark_2")
 Current.fleets$`Dusky shark`=Current.fleets$`Sandbar shark`=c("Other","Southern.shark_2","Survey")
 
-#1. Create SSMSE folders and files
+#1. Create SSMSE folders and OM & EM files
 if(First.Run.SSMSE)
 {
   #specify time changing parameters
@@ -275,6 +279,14 @@ if(run.SSMSE)
     for(s in 1:nrow(Scenarios))
     {
       print(paste('SSMSE run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
+      
+      #flush scenario folder to remove previous runs
+      if(dir.exists(paste0(sp_path_out,'/',Scenarios$Scenario[s],'/')))
+      {
+        fn.remove.subfolder(Loc=paste0(sp_path_out,'/',Scenarios$Scenario[s],'/'))
+      }
+      
+      #run SSMSE
       dumy.out[[s]]=fn.run.SSSMSE(Scen=Scenarios[s,], sp_path_OM, sp_path_EM, sp_path_out,
                                   Nsims=niters, Neff.future=Proj.Effective.pop.size.future,
                                   proj.yrs=Proj.years, proj.yrs.with.obs=Proj.years.obs, 
@@ -291,7 +303,7 @@ if(run.SSMSE)
 
 # Run RatPack loop over each species-scenario combination --------------
 
-#1. Create RatPack folders and files  
+#1. Create RatPack folders and OM & EM files  
 if(First.Run.RatPack)
 {
   #original files
@@ -364,6 +376,8 @@ if(First.Run.RatPack)
 #2. Execute RatPack 
 if(run.RatPack)
 {
+  SS.file.years=c(assessment.year,Proj.assessment.years)
+  
   tic()  #5 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
@@ -375,6 +389,25 @@ if(run.RatPack)
       print(paste('RatPack run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       fn.run.RatPack.exe(where.exe=sp_path_scen,exe.name='run.bat')
+      
+      
+      #run SS EM if Report file not created by Ratpack
+      spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
+      for(k in 1:niters)
+      {
+        for(x in 1:length(SS.file.years))
+        {
+          nn=paste0(spi,k,'_year_',SS.file.years[x])
+          if(!file.exists(paste0(sp_path_scen,'/Stock_Synthesis/',nn,'/Report.sso')))
+          {
+            nn_minus1=paste0(spi,k,'_year_',SS.file.years[x-1])
+            fn.re.run.SS(WD=paste0(sp_path_scen,'/Stock_Synthesis/',nn),
+                         prev.ass=paste0(sp_path_scen,'/Stock_Synthesis/',nn_minus1))
+            
+          }
+        }
+      }
+      
     } #end s
   } #end i
   toc()
@@ -648,7 +681,7 @@ if(run.RatPack)
   Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
              Catch='TotCatch',Catch.RBC='RBC',Catch.TAC='TAC')
   
-  #1. Extract quantities
+  #1. Extract quantities   #ACA, update with 'set up this ratpack results_then delete.R'
   tic()
   for(i in 1:N.sp)
   {
@@ -661,25 +694,32 @@ if(run.RatPack)
       print(paste('RatPack Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       spi=str_remove(Keep.species[i],' shark')
-      
-      #Bring in OM and EM results
       OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
                           skip=1, header=TRUE, fill=TRUE)
-      OMOut.failed=OMOut%>%filter(AssessFail==1)
-      OMOut=OMOut%>%filter(AssessFail==0 | is.na(AssessFail))
-      
       Ufleet<- read.table(paste(sp_path_scen,'Results',paste0(spi,'_totcatch.out'),sep='/'), 
                           skip=1, header=TRUE, fill=TRUE)
-      
       EMOut <- read.table(paste(sp_path_scen,'Debug',paste0(spi,'trace_plot.dat'),sep='/'), 
                           header=TRUE, fill=TRUE)
       
+      #Get Kobe time series from EM Report file of final assessment year
+      Store.Kobe=fn.create.list(1:niters)
+      spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
+      for(k in 1:niters)
+      {
+        nn=paste0(spi,k,'_year_',SS.file.years[length(SS.file.years)])
+        Report=SS_output(paste0(sp_path_scen,'/Stock_Synthesis/',nn),covar=F,forecast=F,readwt=F)
+        Store.Kobe[[k]]=Report$Kobe%>%mutate(Iteration=k)
+        rm(Report)
+      }
+      Store[[s]]=list(OMOut=OMOut%>%
+                            dplyr::select(c(AssessFail,Sim,Year,Period, any_of(Perf.ind))),
+                      EMOut=EMOut,
+                      Ufleet=Ufleet,
+                      Kobe=do.call(rbind,Store.Kobe))
+      rm(OMOut,EMOut,Ufleet)
       
-       Store[[s]]=list(OMOut=OMOut%>%dplyr::select(c(Sim,Year,Period, any_of(Perf.ind))),
-                       EMOut=EMOut,
-                       OMOut.failed=OMOut.failed)
+
       
-      rm(OMOut,EMOut)
     } #end s
     outputs_RatPack[[i]]=Store
   } #end i

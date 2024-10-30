@@ -1,4 +1,5 @@
 # Miscellaneous -----------------------------------------------------------------
+fn.remove.subfolder=function(Loc)  shell( glue::glue("rmdir /s /q \"{Loc}\" ") )
 fn.rename=function(from, to) file.rename(from, to)
 fn.create.folder=function(x) if(!dir.exists(x)) dir.create(x)
 fn.copy.file=function(x,from,to)
@@ -921,7 +922,16 @@ fn.run.RatPack.exe=function(where.exe,exe.name)
   setwd(where.exe)
   system(paste(shQuote(exe.name)))
 }
-
+fn.re.run.SS=function(WD,prev.ass)
+{
+  if(!file.exists(paste0(WD,'/ss.par')))
+  {
+    invisible(file.copy(from=paste0(prev.ass,'/ss.par'),to=paste0(WD,'/ss.par')))
+  }
+  fn.run.SS(where.inputs=WD,
+            where.exe=handl_OneDrive('SS3/ss_win.exe'),
+            args="-nohess")
+}
 
 
 # Report outputs -----------------------------------------------------------------
