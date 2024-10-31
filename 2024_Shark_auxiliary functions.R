@@ -932,6 +932,46 @@ fn.re.run.SS=function(WD,prev.ass)
             where.exe=handl_OneDrive('SS3/ss_win.exe'),
             args="-nohess")
 }
+fn.get.RatPack.results=function(spi,PATH,last_yr)
+{
+  res_1 <- combine_results(proj=read_proj(proj_file_name=paste0(spi,'_test.proj'),
+                                          file_path=PATH,
+                                          in_dir="Inputs"),
+                           file_path=PATH)
+  res_1[[1]] <- filter(res_1[[1]], Year<=last_yr) # Remove the final year from the results from the new version of ratpack (it adds
+  # an extra year with no assessment).
+  
+  #separate the data for the simulation period
+  dd1 <- filter(res[[1]][[1]], Period == "Sim")    
+  
+  d <- res[[1]][[1]] %>%
+    filter(Year <=last.yr.EM) %>%
+    rename(estDepletion=estDepletion_PreviousYr) %>%
+    dplyr::select(any_of(data_fields))%>%
+    mutate(Scenario=Scenarios$Scenario[s],
+           estSSB0_1 = lead(estSSB0), estSSBcurrent_1 = lead(estSSBcurrent), #re-arrange years to fix misspecification
+           estDepletion_1 = lead(estDepletion))
+  
+  # remove EM results when assessment does not converge
+  d <- d %>%
+    mutate(estSSB0_1 = ifelse(AssessFail == 1, as.integer(NA), estSSB0_1),
+           estSSBcurrent_1 = ifelse(AssessFail == 1, as.integer(NA), estSSBcurrent_1),
+           estDepletion_1 = ifelse(AssessFail == 1, as.integer(NA), estDepletion_1))
+  
+  #change -999 values to NAs
+  d <- mutate(d, across(where(is.numeric), ~na_if(., -999)))
+  
+  ## select the simulation period, remove the last year because est depletion -1 year
+  d_current <- filter(d, Period == "Sim", Year<=last_yr-1)
+  
+  ## relative error calculation
+  d_rel_err <- d_current
+  d_rel_err$SSB0_rel_error <- (d_rel_err$estSSB0 - d_rel_err$SSB0) / d_rel_err$SSB0
+  d_rel_err$SSB_rel_error <- (d_rel_err$estSSBcurrent_1 - d_rel_err$SSBcurrent) / d_rel_err$SSBcurrent
+  d_rel_err$Depletion_rel_error <- (d_rel_err$estDepletion_1 - d_rel_err$Depletion) / d_rel_err$Depletion
+  
+  return(list(d=d, dd1=dd1, d_rel_err=d_rel_err, d_current=d_current))
+}
 
 
 # Report outputs -----------------------------------------------------------------
@@ -1012,10 +1052,8 @@ fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
 {
   df%>%
     mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
-    ggplot(aes(Scenario,Value,fill=Scenario))+
-    geom_jitter(shape=16,alpha=0.25, position=position_jitter(0.2))+
-    geom_violin(alpha=0.3)+
-    geom_boxplot(alpha=0.8,width=0.1)+
+    ggviolin(x = "Scenario", y = "Value", fill = "Scenario",
+             add = c("jitter","boxplot"), add.params = list(fill = "white",alpha=0.5))+
     facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
     ylab(YLAB)+xlab('')+
     my_theme()%+replace% 
@@ -1152,6 +1190,37 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
           plot.title = element_text(size=20,hjust=0),
           legend.text = element_text(size=15),
           plot.margin = unit(c(0, 0, 0, 0), "cm"),
+          legend.margin=margin(0,0,0,0),
+          legend.box.margin=margin(-10,0,-10,-10))
+  return(p)
+}
+
+fn.lolipot.plot=function(data,Title='')
+{
+  p=data%>%
+    group_by(Indicator)%>%
+    mutate(z=(value.orig-mean(value.orig))/sd(value.orig),
+           z.group=factor(ifelse((z < 0 & Indicator%in%Perf.ind_pos)|
+                                   (z > 0 & Indicator%in%Perf.ind_neg), "low",
+                                 "high")))%>%
+    ungroup()%>%
+    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    ggdotchart(x = "Scenario", y = "z", color = "z.group",  sorting = "none",   
+               palette = c("chartreuse4", "brown"),
+               add = "segments",  add.params = list(color = "z.group", size = 1), 
+               group = "z.group",  dot.size = 3, rotate = TRUE)+               
+    geom_hline(yintercept = 0, linetype = 2, color = "lightgray")+
+    facet_wrap(~Indicator,ncol=1)+    
+    labs(x = "", y = "",  title = Title) + 
+    my_theme()%+replace% 
+    theme(legend.title = element_blank(),
+          legend.position = 'none',
+          panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=15),
+          axis.text = element_text(size=10),
+          axis.title = element_text(size=16),
+          plot.title = element_text(size=18,hjust=0),
+          legend.text = element_text(size=15),plot.margin = unit(c(0, 0, 0, 0), "cm"),
           legend.margin=margin(0,0,0,0),
           legend.box.margin=margin(-10,0,-10,-10))
   return(p)

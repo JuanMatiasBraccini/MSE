@@ -52,6 +52,7 @@ library(flextable)
 library(grid)
 library(ggh4x)
 library(ggthemes)
+library(ggpubr)
 
 #library(Hmisc)
 set.lib.path=TRUE
@@ -98,6 +99,9 @@ Management_scenarios=read_excel(hndl.mse.comp,   sheet = "Estimation model",skip
 Perform.ind=Management_objectives%>%filter(Used.in.MSE=='Yes')%>%distinct(Perf.ind.name,.keep_all = T)%>%pull(Perf.ind.name)
 Perform.ind.levels=c("Recruits","SSB","Depletion","F/FMSY","B/BMSY","Total catch","Catch variability")
 Perform.ind.levels2=c("Recruits","SSB","Depletion","Kobe","Total catch","Catch variability")  
+Perf.ind_pos=c('Recruits','SSB','Depletion','Kobe','Total catch')
+Perf.ind_neg=c('Catch variability')
+
 
   #Historic catch ranges
 Target.commercial.catch=Management_objectives%>%
@@ -122,9 +126,9 @@ niters <- 2                            # number of simulations per scenario (50,
 assessment.year=2022                   # year latest stock assessment 
 last.year.obs.catch=2021               # last year with observed catch
 Proj.years=10                          # number of projected years (25)
-Proj.years.between.ass=4               # years between assessments in the projected period
+Proj.years.between.ass=5               # years between assessments in the projected period
 Proj.years.obs=seq(1,Proj.years,by=1)  # sampled years in the projected period
-Proj.assessment.years=seq((assessment.year+1),(assessment.year+Proj.years),Proj.years.between.ass)[-1]
+Proj.assessment.years=seq(assessment.year,(assessment.year+Proj.years),Proj.years.between.ass)[-1]
 proj.CV=0.2                            # CV in the projected period
 Proj.Effective.pop.size.future=100     #projection length comp sample size
 Keep.species=sort(unique(Operating_models$Species))
@@ -377,6 +381,7 @@ if(First.Run.RatPack)
 if(run.RatPack)
 {
   SS.file.years=c(assessment.year,Proj.assessment.years)
+  last.yr.EM=SS.file.years[length(SS.file.years)]
   
   tic()  #5 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
@@ -388,19 +393,27 @@ if(run.RatPack)
     {
       print(paste('RatPack run for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
+      sp=str_remove(Keep.species[i],' shark')
+      
+        #Check input files
+      check_proj_file(paste0(sp_path_scen, "/inputs"), paste0(sp,"_test.proj"))
+      check_OPD_file(paste0(sp_path_scen, "/inputs"), paste0(sp,".OPD"))
+      check_HSE_file(paste0(sp_path_scen, "/inputs"), paste0(sp,".HSE"))
+      
+        #run RatPack
       fn.run.RatPack.exe(where.exe=sp_path_scen,exe.name='run.bat')
       
       
-      #run SS EM if Report file not created by Ratpack
-      spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
+      #run SS EM for last assessment year if Report file not created by Ratpack
+      spi=paste0(sp,'_sim_')
       for(k in 1:niters)
       {
-        for(x in 1:length(SS.file.years))
+        for(x in length(SS.file.years))
         {
           nn=paste0(spi,k,'_year_',SS.file.years[x])
           if(!file.exists(paste0(sp_path_scen,'/Stock_Synthesis/',nn,'/Report.sso')))
           {
-            nn_minus1=paste0(spi,k,'_year_',SS.file.years[x-1])
+            nn_minus1=paste0(spi,k,'_year_',SS.file.years[1]) #get par.ss from 1st assessment
             fn.re.run.SS(WD=paste0(sp_path_scen,'/Stock_Synthesis/',nn),
                          prev.ass=paste0(sp_path_scen,'/Stock_Synthesis/',nn_minus1))
             
@@ -456,7 +469,7 @@ if(run.SSMSE)
   out.exten='SSMSE'
   output_dis.pi.list=fn.create.list(Keep.species)
   Check.SSMSE.convergence=Get.SSMSE.perf.indic=Get.SSMSE.timeseries.perf.indic=output_boxplot.pi.list=
-    output_quilt.list=output_dis.pi.list
+    output_quilt.list=output_lollipop.list=output_dis.pi.list
   
   #1. Extract quantities
   tic()   #takes 0.5 secs per species-scenario-simulation-proj.year if OVERWRITE==TRUE 
@@ -628,8 +641,11 @@ if(run.SSMSE)
     fn.polar.plot(data= Per.ind.scaled, Title= "")
     ggsave(paste0(outs.path,'/3_Polar.plot_',out.exten,'_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
     
+    #2.4 Performance indicator lollipop plot
+    output_lollipop.list[[i]]=fn.lolipot.plot(data= Per.ind.scaled, Title= Keep.species[i])
     
-    #2.4 Quilt plot
+    
+    #2.5 Quilt plot
     output_quilt.list[[i]]=fn.quilt.plot(df=Per.ind.scaled%>%
                                                data.frame()%>%
                                            dplyr::select(-value)%>%
@@ -666,6 +682,11 @@ if(run.SSMSE)
     annotate_figure(left = textGrob('Indicator value', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
   ggsave(paste0(outs.path,'/1_Perf_indicator_box.plot_',out.exten,'.tiff'),width = 10,height = 8,compression = "lzw")
   
+    #combined lollipop plot
+  figure=ggarrange(plotlist = output_lollipop.list,nrow=1)
+  annotate_figure(figure,bottom = textGrob("z-score", vjust=-1,gp = gpar(cex = 1.3)))
+  ggsave(paste0(outs.path,'/3_Lollipop.plot_',out.exten,'.tiff'),width = 10,height = 10,compression = "lzw")
+  
     #combined quilt plot
   ggarrange(plotlist = output_quilt.list,ncol=1)
   ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
@@ -676,6 +697,10 @@ if(run.RatPack)
 {
   out.exten='RatPack'
   outputs_RatPack=fn.create.list(Keep.species)
+  data_fields <- c('Sim','Year','Period','SSB0','SSBcurrent','SSBregion','Depletion',
+                   'Recruits','AssessFail','estSSB0','estSSBcurrent','estDepletion',
+                   'RawRBC','RBCPostPGMSY','RBC','TACdisc','TACpost','TAC',
+                   'RawTotalCatch','TotCatch','TotDiscard','mainCPUE')
   
   #Perform.ind
   Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
@@ -694,6 +719,7 @@ if(run.RatPack)
       print(paste('RatPack Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       spi=str_remove(Keep.species[i],' shark')
+      xx=fn.get.RatPack.results(spi, PATH=sp_path_scen, last_yr=last.yr.EM)
       OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
                           skip=1, header=TRUE, fill=TRUE)
       Ufleet<- read.table(paste(sp_path_scen,'Results',paste0(spi,'_totcatch.out'),sep='/'), 
@@ -706,20 +732,23 @@ if(run.RatPack)
       spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
       for(k in 1:niters)
       {
-        nn=paste0(spi,k,'_year_',SS.file.years[length(SS.file.years)])
+        nn=paste0(spi,k,'_year_',last.yr.EM)
         Report=SS_output(paste0(sp_path_scen,'/Stock_Synthesis/',nn),covar=F,forecast=F,readwt=F)
         Store.Kobe[[k]]=Report$Kobe%>%mutate(Iteration=k)
         rm(Report)
       }
-      Store[[s]]=list(OMOut=OMOut%>%
+      Store[[s]]=list(d=xx$d,
+                      dd1=xx$dd1,
+                      d_rel_err=xx$d_rel_err,
+                      d_current=xx$d_current,
+                      OMOut=OMOut%>%
                             dplyr::select(c(AssessFail,Sim,Year,Period, any_of(Perf.ind))),
                       EMOut=EMOut,
                       Ufleet=Ufleet,
-                      Kobe=do.call(rbind,Store.Kobe))
-      rm(OMOut,EMOut,Ufleet)
+                      Kobe=do.call(rbind,Store.Kobe)%>%filter(Yr<=last.yr.EM))
       
-
       
+      rm(OMOut,EMOut,Ufleet,xx)
     } #end s
     outputs_RatPack[[i]]=Store
   } #end i
