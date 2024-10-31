@@ -65,6 +65,7 @@ if(!exists('handl_OneDrive')) source(fn.user(x1='C:/Users',
                                              x2='OneDrive - Department of Primary Industries and Regional Development/Matias/Analyses/SOURCE_SCRIPTS/Git_other/handl_OneDrive.R'))
 source.hnld=handl_OneDrive("Analyses/MSE/Git_MSE/")
 fn.source=function(script)source(paste(source.hnld,script,sep=""))
+source(handl_OneDrive("Analyses/SOURCE_SCRIPTS/Git_other/send.emails.R"))
 fn.source("2024_Shark_auxiliary functions.R")
 
 # source the ratpack data script (it's on Bitbucket)
@@ -301,7 +302,20 @@ if(run.SSMSE)
     SSMSE_outputs[[i]]=dumy.out
     rm(sp_path_OM,sp_path_EM,Scenarios,sp_path_out)
   } #end i
-  toc()
+  toc(log = TRUE, quiet = TRUE)
+  computation.time <- tic.log(format = TRUE)
+  tic.clearlog()
+  send.email(TO="matias.braccini@dpird.wa.gov.au",
+             CC='',
+             Subject=paste("SSMSE run finished running at",Sys.time()),
+             Body= paste("Computation time for",
+                         length(Keep.species),"species,",
+                         round(nrow(do.call(rbind,SCENARIOS))/length(Keep.species)),"scenarios,",
+                         Proj.years, "projection years with assessments in",
+                         paste(Proj.assessment.years,collapse=' & '),
+                         "with", niters,"simulations each,",
+                         "was",computation.time),  
+             Attachment=NULL) 
 }
 
 
@@ -423,7 +437,20 @@ if(run.RatPack)
       
     } #end s
   } #end i
-  toc()
+  toc(log = TRUE, quiet = TRUE)
+  computation.time <- tic.log(format = TRUE)
+  tic.clearlog()
+  send.email(TO="matias.braccini@dpird.wa.gov.au",
+             CC='',
+             Subject=paste("RatPack run finished running at",Sys.time()),
+             Body= paste("Computation time for",
+                         length(Keep.species),"species,",
+                         round(nrow(do.call(rbind,SCENARIOS))/length(Keep.species)),"scenarios,",
+                         Proj.years, "projection years with assessments in",
+                         paste(Proj.assessment.years,collapse=' & '),
+                         "with", niters,"simulations each,",
+                         "was",computation.time),  
+             Attachment=NULL) 
 }
    
 # Report tested MSE scenarios  ----------------------------------------------------------
@@ -706,7 +733,7 @@ if(run.RatPack)
   Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
              Catch='TotCatch',Catch.RBC='RBC',Catch.TAC='TAC')
   
-  #1. Extract quantities   #ACA, update with 'set up this ratpack results_then delete.R'
+  #1. Extract quantities   
   tic()
   for(i in 1:N.sp)
   {
@@ -754,6 +781,7 @@ if(run.RatPack)
   } #end i
   toc()
   
+  #ACA, update with 'set up this ratpack results_then delete.R'
   #2. Plot figures
   #Adapt this....also see mi Ratpack code
   #1. Spawning stock biomass
