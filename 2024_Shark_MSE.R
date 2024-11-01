@@ -397,7 +397,7 @@ if(run.RatPack)
   SS.file.years=c(assessment.year,Proj.assessment.years)
   last.yr.EM=SS.file.years[length(SS.file.years)]
   
-  tic()  #5 secs per species-scenario-simulation-proj.year
+  tic()  #13 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
@@ -495,8 +495,8 @@ if(run.SSMSE)
   OVERWRITE=FALSE #set to TRUE if SSMSE is re run, otherwise set to FALSE to speed up reporting
   out.exten='SSMSE'
   output_dis.pi.list=fn.create.list(Keep.species)
-  Check.SSMSE.convergence=Get.SSMSE.perf.indic=Get.SSMSE.timeseries.perf.indic=output_boxplot.pi.list=
-    output_quilt.list=output_lollipop.list=output_dis.pi.list
+  Check.SSMSE.convergence=Get.SSMSE.perf.indic=Get.SSMSE.perf.indic.timeseries=output_boxplot.pi.list=
+    output_quilt.list=output_lollipop.list=output_lollipop.list2=output_dis.pi.list
   
   #1. Extract quantities
   tic()   #takes 0.5 secs per species-scenario-simulation-proj.year if OVERWRITE==TRUE 
@@ -546,7 +546,7 @@ if(run.SSMSE)
             mutate(dumi=as.numeric(sub(".*?_", "", model_run)))%>%
             filter(dumi==max(dumi,na.rm=T))
     
-    Get.SSMSE.timeseries.perf.indic[[i]]=temp.d
+    Get.SSMSE.perf.indic.timeseries[[i]]=temp.d
     
       #extract values
     a=temp.d%>%
@@ -612,16 +612,16 @@ if(run.SSMSE)
     for(s in 1:nrow(Scenarios))
     {
       xx=kobePlot(f.traj=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$f.traj,
-                                   b.traj=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$b.traj,
-                                   Years=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Years,
-                                   Titl=Scenarios$Scenario[s],
-                                   Probs=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Probs,
-                                   pt.size=2.5,
-                                   txt.col='transparent',
-                                   line.col='black',
-                                   YrSize=4,
-                                   YLAB='', XLAB='',
-                                   Leg.txt.size=10)
+                  b.traj=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$b.traj,
+                  Years=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Years,
+                  Titl=Scenarios$Scenario[s],
+                  Probs=Get.SSMSE.perf.indic[[i]]$Kobe[[s]]$Probs,
+                  pt.size=2.5,
+                  txt.col='transparent',
+                  line.col='black',
+                  YrSize=4,
+                  YLAB='', XLAB='',
+                  Leg.txt.size=10)
       scen.list_kobe[[s]]=xx$kobe
       scen.list_kobe.prob.green[[s]]=data.frame(Scenario=Scenarios$Scenario[s],Prob=xx$prob.green)
       
@@ -669,8 +669,8 @@ if(run.SSMSE)
     ggsave(paste0(outs.path,'/3_Polar.plot_',out.exten,'_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
     
     #2.4 Performance indicator lollipop plot
-    output_lollipop.list[[i]]=fn.lolipot.plot(data= Per.ind.scaled, Title= Keep.species[i])
-    
+    output_lollipop.list[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X="Scenario", strip='Indicator', Title= Keep.species[i])
+    output_lollipop.list2[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X='Indicator', strip="Scenario", Title= Keep.species[i])
     
     #2.5 Quilt plot
     output_quilt.list[[i]]=fn.quilt.plot(df=Per.ind.scaled%>%
@@ -688,7 +688,7 @@ if(run.SSMSE)
                                         Delta=delt[i]) 
     
     #2.5 Time series of performance indicators 
-    fn.perf.ind.time.series(df=Get.SSMSE.timeseries.perf.indic[[i]]%>%
+    fn.perf.ind.time.series(df=Get.SSMSE.perf.indic.timeseries[[i]]%>%
                                     dplyr::select(-c(dumi,model_run))%>%
                                     gather(Perf.ind,Value,-c(iteration,scenario,year))%>%
                               rename(Scenario=scenario),
@@ -714,6 +714,10 @@ if(run.SSMSE)
   annotate_figure(figure,bottom = textGrob("z-score", vjust=-1,gp = gpar(cex = 1.3)))
   ggsave(paste0(outs.path,'/3_Lollipop.plot_',out.exten,'.tiff'),width = 10,height = 10,compression = "lzw")
   
+  figure=ggarrange(plotlist = output_lollipop.list2,nrow=1)
+  annotate_figure(figure,bottom = textGrob("z-score", vjust=-1,gp = gpar(cex = 1.3)))
+  ggsave(paste0(outs.path,'/3_Lollipop.plot.2_',out.exten,'.tiff'),width = 10,height = 10,compression = "lzw")
+  
     #combined quilt plot
   ggarrange(plotlist = output_quilt.list,ncol=1)
   ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
@@ -733,8 +737,8 @@ if(run.RatPack)
   Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
              Catch='TotCatch',Catch.RBC='RBC',Catch.TAC='TAC')
   
-  #1. Extract quantities   
-  tic()
+  #1. Extract quantities    
+  tic()   #0.17 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
@@ -747,12 +751,13 @@ if(run.RatPack)
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       spi=str_remove(Keep.species[i],' shark')
       xx=fn.get.RatPack.results(spi, PATH=sp_path_scen, last_yr=last.yr.EM)
-      OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
-                          skip=1, header=TRUE, fill=TRUE)
-      Ufleet<- read.table(paste(sp_path_scen,'Results',paste0(spi,'_totcatch.out'),sep='/'), 
-                          skip=1, header=TRUE, fill=TRUE)
-      EMOut <- read.table(paste(sp_path_scen,'Debug',paste0(spi,'trace_plot.dat'),sep='/'), 
-                          header=TRUE, fill=TRUE)
+      
+      # OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
+      #                     skip=1, header=TRUE, fill=TRUE)
+      # Ufleet<- read.table(paste(sp_path_scen,'Results',paste0(spi,'_totcatch.out'),sep='/'), 
+      #                     skip=1, header=TRUE, fill=TRUE)
+      # EMOut <- read.table(paste(sp_path_scen,'Debug',paste0(spi,'trace_plot.dat'),sep='/'), 
+      #                     header=TRUE, fill=TRUE)
       
       #Get Kobe time series from EM Report file of final assessment year
       Store.Kobe=fn.create.list(1:niters)
@@ -764,26 +769,125 @@ if(run.RatPack)
         Store.Kobe[[k]]=Report$Kobe%>%mutate(Iteration=k)
         rm(Report)
       }
-      Store[[s]]=list(d=xx$d,
-                      dd1=xx$dd1,
+      Kobe=do.call(rbind,Store.Kobe)%>%
+        filter(Yr<=last.yr.EM)%>%
+        rename(year=Yr,
+               iteration=Iteration,
+               B.over.BMSY=B.Bmsy,
+               F.over.FMSY=F.Fmsy)
+      Kobe.median=Kobe%>%
+        group_by(year)%>%
+        summarise(f.traj=median(F.over.FMSY,na.rm=T),
+                  b.traj=median(B.over.BMSY,na.rm=T))
+      Kobe.probs=Kobe%>%
+        filter(year==last.yr.EM)%>%
+        dplyr::select(B.over.BMSY,F.over.FMSY)%>%
+        rename(x=B.over.BMSY,y=F.over.FMSY)
+      
+      xx_kobe=kobePlot(f.traj=Kobe.median$f.traj,
+                       b.traj=Kobe.median$b.traj,
+                       Years=Kobe.median$year,
+                       Titl=Scenarios$Scenario[s],
+                       Probs=Kobe.probs,
+                       pt.size=2.5,
+                       txt.col='transparent',
+                       line.col='black',
+                       YrSize=4,
+                       YLAB='', XLAB='',
+                       Leg.txt.size=10)
+      
+      
+      #Perf indicators for last year of assessment   #MISSING: select only AssessFail==0??  ACA
+      dis.perf.in=c(Perf.ind[-match(c("RBC","TAC"),Perf.ind)],'B.over.BMSY','F.over.FMSY')
+      a=xx$d%>%
+        left_join(Kobe%>%rename(Year=year,Sim=iteration),by=c("Year","Sim"))%>%
+        filter(Year==last.yr.EM)%>%
+        mutate(scenario=Scenarios$Scenario[s])%>%
+        dplyr::select(c(scenario,any_of(dis.perf.in)))%>%
+        rename(Scenario=scenario)%>%
+        gather(dis.perf.in,Value,-c(Scenario))%>%
+        filter(!dis.perf.in=='Catch')%>%
+        rename(Perf.ind=dis.perf.in)
+      
+      
+      #Total catch and catch variability
+      katch=xx$d%>%
+        dplyr::select(TotCatch,Sim,Year)%>%
+        rename(year=Year,
+               iteration=Sim,
+               Catch=TotCatch)%>%
+        filter(!is.na(Catch))%>%
+        filter(year>Proj.assessment.years[length(Proj.assessment.years)-1])
+      iter=sort(unique(katch$iteration))
+      Tot.ktch=fn.create.list(iter)
+      AAV.ktch=Tot.ktch
+      for(x in 1:length(iter))
+      {
+        dd=fn.ktch.perf.ind(ktch=katch%>%filter(iteration==iter[x])%>%pull(Catch))
+        Tot.ktch[[x]]=data.frame(Value=dd$Total)%>%
+          mutate(Perf.ind='Total catch', Scenario=Scenarios$Scenario[s])%>%
+          relocate(Scenario,Perf.ind,Value)
+        AAV.ktch[[x]]=data.frame(Value=dd$AAV)%>%
+          mutate(Perf.ind='Catch variability', Scenario=Scenarios$Scenario[s])%>%
+          relocate(Scenario,Perf.ind,Value)
+      }
+      Katch.var.perf.ind=do.call(rbind,AAV.ktch)
+      Katch.tot.perf.ind=do.call(rbind,Tot.ktch)
+      
+      
+      #Store stuff
+      Store[[s]]=list(perf.ind.values=rbind(a,Katch.var.perf.ind,Katch.tot.perf.ind)%>%
+                        mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
+                                               ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                                                      Perf.ind)),
+                               Perf.ind=factor(Perf.ind,levels=Perform.ind.levels)),
+                      perf.indic.timeseries=xx$d%>%
+                        rename(year=Year,
+                               iteration=Sim)%>%
+                        mutate(scenario=Scenarios$Scenario[s],
+                               Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
+                               dumi=ifelse(Period=='OM','',last.yr.EM),
+                               model_run=paste(Period,dumi,sep='_'))%>%
+                        dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
+                                        any_of(Perf.ind),dumi))%>%
+                        left_join(Kobe,by=c("year","iteration")),
                       d_rel_err=xx$d_rel_err,
-                      d_current=xx$d_current,
-                      OMOut=OMOut%>%
-                            dplyr::select(c(AssessFail,Sim,Year,Period, any_of(Perf.ind))),
-                      EMOut=EMOut,
-                      Ufleet=Ufleet,
-                      Kobe=do.call(rbind,Store.Kobe)%>%filter(Yr<=last.yr.EM))
-      
-      
-      rm(OMOut,EMOut,Ufleet,xx)
+                      Kobe=list(Probs=xx_kobe$prob.green,   
+                                kobe=xx_kobe$kobe))
+      rm(xx,Kobe.median,Kobe)
     } #end s
     outputs_RatPack[[i]]=Store
+    
+    #Plot Kobe
+    wid=6.5
+    NroW=5
+    if(nrow(Scenarios)<9)
+    {
+      wid=7.5
+      NroW=4
+    }
+    
+    scen.list_kobe=fn.create.list(Scenarios$Scenario)
+    for(s in 1:nrow(Scenarios)) scen.list_kobe[[s]]=Store[[s]]$Kobe[[grep('kobe', names(Store[[s]]$Kobe))]]
+    
+    ggarrange(plotlist = scen.list_kobe,ncol=2,nrow=NroW, common.legend=FALSE)%>%
+      annotate_figure(left = textGrob(expression(F/~F[MSY]), rot = 90, vjust = 1, gp = gpar(cex = 1.7)),
+                      bottom = textGrob(expression(B/~B[MSY]), gp = gpar(cex = 1.7)))
+    ggsave(paste0(outs.path,'/2_Kobe_',out.exten,'_',Keep.species[i],'.tiff'),width = wid,height = 12,compression = "lzw")
+    
+    rm(Store)
   } #end i
   toc()
   
-  #ACA, update with 'set up this ratpack results_then delete.R'
+  #1. Summarize model runs
+  Rat.pack.summary=fn.create.list(Keep.species)
+  for(i in 1:N.sp) Rat.pack.summary[[i]]=fn.RatPack.summary(dat=outputs_RatPack[[i]])%>%mutate(Species=Keep.species[i])
+  write.csv(do.call(rbind,Rat.pack.summary),paste0(outs.path,'/Table 2.Run_summary_',out.exten,'_','.csv'),row.names = F)
+  
+  #ggsave(paste0(outs.path,'/2_Kobe_',out.exten,'_',Keep.species[i],'.tiff'),width = wid,height = 12,compression = "lzw")
+  #ACA, update with 'set up this ratpack results_then delete.R' and Adapt this....also see mi Ratpack code
   #2. Plot figures
-  #Adapt this....also see mi Ratpack code
+  
   #1. Spawning stock biomass
   OMSSBquant=fn.percentiles(d=OMOut,
                             grouping='Year',
@@ -804,29 +908,26 @@ if(run.RatPack)
                     data.frame)%>%
     mutate(Species=Keep.species[i],
            Scenario=Scenarios$Scenario[s])
+  
   #1. Calculate performance indicators
-  Perform.ind
-  Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
-             Catch='TotCatch',Catch.RBC='RBC')
-  Perf.ind.list=fn.create.list(Perf.ind)
-  for(p in 1:length(Perf.ind))
-  {
-    Perf.ind.list[[p]]=fn.percentiles(d=OMOut,grouping='Year',var=Perf.ind[[p]])%>%mutate(PerfInd=Perf.ind[[p]])
-  }
-  
-  
-  RBCyears <- sort(unique(EMSSBquant$RBCyear))
-  EMSSBquant$Year <- as.numeric(EMSSBquant$Year)
-  EMSSBquant$RBCyear <- factor(EMSSBquant$RBCyear, level=RBCyears)
-  EMSSBquant <- rename(EMSSBquant, Assessment=RBCyear)
-  ggplot(OMSSBquant, aes(x=Year)) +
-    geom_ribbon(aes(ymin=ymin, ymax=ymax), fill="gray", alpha=0.50) +
-    geom_line(aes(y=middle)) +
-    labs(y="SSB") +
-    geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
-    geom_ribbon(data=EMSSBquant,aes(ymin=lower, ymax=upper, fill=Assessment), alpha=0.20) +
-    scale_color_manual(values=rev(c("#08306b","cadetblue")))+ expand_limits(y=0)
-  #ggsave(paste(sp_path_scen,'outputs','SSB_OM_EM.tiff',sep='/'),width = 6,height = 6,compression = "lzw")
-  ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
+  # Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
+  #            Catch='TotCatch',Catch.RBC='RBC')
+  # Perf.ind.list=fn.create.list(Perf.ind)
+  # for(p in 1:length(Perf.ind))
+  # {
+  #   Perf.ind.list[[p]]=fn.percentiles(d=OMOut,grouping='Year',var=Perf.ind[[p]])%>%mutate(PerfInd=Perf.ind[[p]])
+  # }
+  # RBCyears <- sort(unique(EMSSBquant$RBCyear))
+  # EMSSBquant$Year <- as.numeric(EMSSBquant$Year)
+  # EMSSBquant$RBCyear <- factor(EMSSBquant$RBCyear, level=RBCyears)
+  # EMSSBquant <- rename(EMSSBquant, Assessment=RBCyear)
+  # ggplot(OMSSBquant, aes(x=Year)) +
+  #   geom_ribbon(aes(ymin=ymin, ymax=ymax), fill="gray", alpha=0.50) +
+  #   geom_line(aes(y=middle)) +
+  #   labs(y="SSB") +
+  #   geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
+  #   geom_ribbon(data=EMSSBquant,aes(ymin=lower, ymax=upper, fill=Assessment), alpha=0.20) +
+  #   scale_color_manual(values=rev(c("#08306b","cadetblue")))+ expand_limits(y=0)
+  # ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
   
 }

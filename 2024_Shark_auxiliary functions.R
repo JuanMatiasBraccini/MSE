@@ -934,17 +934,17 @@ fn.re.run.SS=function(WD,prev.ass)
 }
 fn.get.RatPack.results=function(spi,PATH,last_yr)
 {
-  res_1 <- combine_results(proj=read_proj(proj_file_name=paste0(spi,'_test.proj'),
+  res <- combine_results(proj=read_proj(proj_file_name=paste0(spi,'_test.proj'),
                                           file_path=PATH,
                                           in_dir="Inputs"),
                            file_path=PATH)
-  res_1[[1]] <- filter(res_1[[1]], Year<=last_yr) # Remove the final year from the results from the new version of ratpack (it adds
+  res[[1]] <- filter(res[[1]], Year<=last_yr) # Remove the final year from the results from the new version of ratpack (it adds
   # an extra year with no assessment).
   
   #separate the data for the simulation period
-  dd1 <- filter(res[[1]][[1]], Period == "Sim")    
+  dd1 <- filter(res[[1]], Period == "Sim")    
   
-  d <- res[[1]][[1]] %>%
+  d <- res[[1]] %>%
     filter(Year <=last.yr.EM) %>%
     rename(estDepletion=estDepletion_PreviousYr) %>%
     dplyr::select(any_of(data_fields))%>%
@@ -1091,9 +1091,10 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
     Probs=Probs%>%filter(x>=0 & y>=0)
     kernelF <- gplots::ci2d(Probs$x, Probs$y, nbins = 50, factor = 1.5, 
                             ci.levels = c(0.5, 0.8, 0.95), show = "none")
-    KernelD=rbind(kernelF$contours$"0.95"%>%mutate(CI='1',col='cadetblue4'), #'grey30'
-                  kernelF$contours$"0.8"%>%mutate(CI='2',col='cadetblue3'), #'grey60'
-                  kernelF$contours$"0.5"%>%mutate(CI='3',col='cadetblue1')) #'grey85'
+    if("0.5"%in%names(kernelF$contours)) kernelF_50=kernelF$contours$"0.5"%>%mutate(CI='3',col='cadetblue1')
+    KernelD=rbind(kernelF$contours$"0.95"%>%mutate(CI='1',col='cadetblue4'), 
+                  kernelF$contours$"0.8"%>%mutate(CI='2',col='cadetblue3'))
+    if("0.5"%in%names(kernelF$contours)) KernelD=rbind(KernelD,kernelF_50)
     kernels=KernelD%>%distinct(CI,col)%>%pull(col)
     names(kernels)=KernelD%>%distinct(CI,col)%>%pull(CI)
     
@@ -1195,7 +1196,7 @@ fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
   return(p)
 }
 
-fn.lolipot.plot=function(data,Title='')
+fn.lolipot.plot=function(data,X,strip,Title='')
 {
   p=data%>%
     group_by(Indicator)%>%
@@ -1205,12 +1206,12 @@ fn.lolipot.plot=function(data,Title='')
                                  "high")))%>%
     ungroup()%>%
     mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
-    ggdotchart(x = "Scenario", y = "z", color = "z.group",  sorting = "none",   
+    ggdotchart(x = X, y = "z", color = "z.group",  sorting = "none",   
                palette = c("chartreuse4", "brown"),
                add = "segments",  add.params = list(color = "z.group", size = 1), 
                group = "z.group",  dot.size = 3, rotate = TRUE)+               
     geom_hline(yintercept = 0, linetype = 2, color = "lightgray")+
-    facet_wrap(~Indicator,ncol=1)+    
+    facet_wrap(as.formula(paste("~", strip)),ncol=1)+    
     labs(x = "", y = "",  title = Title) + 
     my_theme()%+replace% 
     theme(legend.title = element_blank(),
@@ -1246,4 +1247,22 @@ fn.quilt.plot=function(df,clr.scale,col.breaks,Titl,Delta)
     ggtitle(Titl)+
     theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   return(G)
+}
+
+fn.RatPack.summary=function(dat)
+{
+  vec=c(Fail='AssessFail',RBC='RBC',
+        OM_depletion='Depletion',EM_depletion='estDepletion',
+        OM_SSB='SSBcurrent',EM_SSB='estSSBcurrent')
+  dumi=fn.create.list(names(dat))
+  for(e in 1:length(dat))
+  {
+    dd=dat[[e]]$perf.indic.timeseries%>%filter(Period=='Sim')
+    d=lapply(dd[vec], function(x) summary(x))
+    d=as.data.frame(do.call(rbind,d))%>%
+          rownames_to_column('Quantity')%>%
+          mutate(Scenario=names(dat)[e])
+    dumi[[e]]=d
+  }
+  return(do.call(rbind,dumi)%>%arrange(Quantity))
 }
