@@ -53,6 +53,7 @@ library(grid)
 library(ggh4x)
 library(ggthemes)
 library(ggpubr)
+library(ggridges)
 
 #library(Hmisc)
 set.lib.path=TRUE
@@ -496,7 +497,7 @@ if(run.SSMSE)
   out.exten='SSMSE'
   output_dis.pi.list=fn.create.list(Keep.species)
   Check.SSMSE.convergence=Get.SSMSE.perf.indic=Get.SSMSE.perf.indic.timeseries=output_boxplot.pi.list=
-    output_quilt.list=output_lollipop.list=output_lollipop.list2=output_dis.pi.list
+    output_quilt.list=output_lollipop.list=output_lollipop.list2=output_dis.pi.ridge.list=output_dis.pi.list
   
   #1. Extract quantities
   tic()   #takes 0.5 secs per species-scenario-simulation-proj.year if OVERWRITE==TRUE 
@@ -643,6 +644,11 @@ if(run.SSMSE)
     output_dis.pi.list[[i]]=fn.perf.ind.dist(df=Get.SSMSE.perf.indic[[i]]$perf.ind.values,
                                             YLAB='',
                                             Title=Keep.species[i])
+    drop.ylab=TRUE
+    if(i%in%c(1,3)) drop.ylab=FALSE
+    output_dis.pi.ridge.list[[i]]=fn.perf.ind.dist.ridges(df=Get.SSMSE.perf.indic[[i]]$perf.ind.values,
+                                                          YLAB=drop.ylab,
+                                                          Title=Keep.species[i])
     output_boxplot.pi.list[[i]]=fn.perf.ind.boxplot(df=Get.SSMSE.perf.indic[[i]]$perf.ind.values,
                                                    YLAB='',
                                                    Title=Keep.species[i])        
@@ -697,13 +703,18 @@ if(run.SSMSE)
     ggsave(paste0(outs.path,'/1_Perf_indicator_time.series_',out.exten,'_',Keep.species[i],'.tiff'),
            width = 10,height = 8,compression = "lzw")
     
-    
+    rm(Per.ind.scaled)
   } #end i
   
     #combined distribution of performance indicators
   ggarrange(plotlist = output_dis.pi.list,nrow=1,common.legend = FALSE)%>%
     annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
   ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_',out.exten,'.tiff'),width = 10.5,height = 8,compression = "lzw")
+  
+  ggarrange(plotlist = output_dis.pi.ridge.list,nrow=2,ncol=2,common.legend = FALSE)%>%
+    annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1.4, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot.ridge_',out.exten,'.tiff'),
+         width = 11,height = 6,compression = "lzw")
   
   ggarrange(plotlist = output_boxplot.pi.list,nrow=1)%>%
     annotate_figure(left = textGrob('Indicator value', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
@@ -732,6 +743,13 @@ if(run.RatPack)
                    'Recruits','AssessFail','estSSB0','estSSBcurrent','estDepletion',
                    'RawRBC','RBCPostPGMSY','RBC','TACdisc','TACpost','TAC',
                    'RawTotalCatch','TotCatch','TotDiscard','mainCPUE')
+  SS.file.years=c(assessment.year,Proj.assessment.years)
+  last.yr.EM=SS.file.years[length(SS.file.years)]
+  
+  output_dis.pi.list=fn.create.list(Keep.species)
+  output_boxplot.pi.list=output_quilt.list=output_lollipop.list=
+    output_lollipop.list2=output_dis.pi.ridge.list=output_dis.pi.list
+  
   
   #Perform.ind
   Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
@@ -797,9 +815,10 @@ if(run.RatPack)
                        Leg.txt.size=10)
       
       
-      #Perf indicators for last year of assessment   #MISSING: select only AssessFail==0??  ACA
+      #Perf indicators for last year of assessment   ACA: uncomment filter(is.na(AssessFail)| AssessFail==0)
       dis.perf.in=c(Perf.ind[-match(c("RBC","TAC"),Perf.ind)],'B.over.BMSY','F.over.FMSY')
       a=xx$d%>%
+      #  filter(is.na(AssessFail)| AssessFail==0)%>%
         left_join(Kobe%>%rename(Year=year,Sim=iteration),by=c("Year","Sim"))%>%
         filter(Year==last.yr.EM)%>%
         mutate(scenario=Scenarios$Scenario[s])%>%
@@ -812,6 +831,7 @@ if(run.RatPack)
       
       #Total catch and catch variability
       katch=xx$d%>%
+      #  filter(is.na(AssessFail)| AssessFail==0)%>%
         dplyr::select(TotCatch,Sim,Year)%>%
         rename(year=Year,
                iteration=Sim,
@@ -837,20 +857,21 @@ if(run.RatPack)
       
       #Store stuff
       Store[[s]]=list(perf.ind.values=rbind(a,Katch.var.perf.ind,Katch.tot.perf.ind)%>%
-                        mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
-                                               ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
-                                                      Perf.ind)),
-                               Perf.ind=factor(Perf.ind,levels=Perform.ind.levels)),
+                                        mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
+                                                        ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                                                        Perf.ind)),
+                                               Perf.ind=factor(Perf.ind,levels=Perform.ind.levels)),
                       perf.indic.timeseries=xx$d%>%
-                        rename(year=Year,
-                               iteration=Sim)%>%
-                        mutate(scenario=Scenarios$Scenario[s],
-                               Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
-                               dumi=ifelse(Period=='OM','',last.yr.EM),
-                               model_run=paste(Period,dumi,sep='_'))%>%
-                        dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
-                                        any_of(Perf.ind),dumi))%>%
-                        left_join(Kobe,by=c("year","iteration")),
+                                 #  filter(is.na(AssessFail)| AssessFail==0)%>%
+                                    rename(year=Year,
+                                           iteration=Sim)%>%
+                                    mutate(scenario=Scenarios$Scenario[s],
+                                           Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
+                                           dumi=ifelse(Period=='OM','',last.yr.EM),
+                                           model_run=paste(Period,dumi,sep='_'))%>%
+                                    dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
+                                                    any_of(Perf.ind),dumi))%>%
+                                    left_join(Kobe,by=c("year","iteration")),
                       d_rel_err=xx$d_rel_err,
                       Kobe=list(Probs=xx_kobe$prob.green,   
                                 kobe=xx_kobe$kobe))
@@ -879,55 +900,127 @@ if(run.RatPack)
   } #end i
   toc()
   
-  #1. Summarize model runs
+  #2. Summarize model runs
   Rat.pack.summary=fn.create.list(Keep.species)
   for(i in 1:N.sp) Rat.pack.summary[[i]]=fn.RatPack.summary(dat=outputs_RatPack[[i]])%>%mutate(Species=Keep.species[i])
   write.csv(do.call(rbind,Rat.pack.summary),paste0(outs.path,'/Table 2.Run_summary_',out.exten,'_','.csv'),row.names = F)
   
-  #ggsave(paste0(outs.path,'/2_Kobe_',out.exten,'_',Keep.species[i],'.tiff'),width = wid,height = 12,compression = "lzw")
-  #ACA, update with 'set up this ratpack results_then delete.R' and Adapt this....also see mi Ratpack code
-  #2. Plot figures
   
-  #1. Spawning stock biomass
-  OMSSBquant=fn.percentiles(d=OMOut,
-                            grouping='Year',
-                            var='SSBcurrent')
-  EMSSBquant=fn.percentiles(d=EMOut %>%
-                              filter(RBCyear%in% Proj.assessment.years) %>%   
-                              group_by(RBCyear) %>%
-                              pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
-                                           names_to="Year", values_to="estSSB", names_prefix="X"),
-                            grouping=c('RBCyear','Year'),
-                            var='estSSB')
+  #3. Plot figures
+  delt=c(-0.175,-0.2,-0.2,-0.2)  
+  for(i in 1:N.sp)
+  {
+    print(paste('RatPack create figures for ',Keep.species[i],'-----------'))
+    Scenarios=SCENARIOS[[i]]
+    aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
+    if(length(aaid)>0) Scenarios=Scenarios[-aaid,]
+    
+    
+    #replace 'Get.SSMSE.perf.indic' with 'outputs_RatPack'
+    
+    #3.1 Distribution of performance indicators
+    dumi=fn.create.list(Scenarios$Scenario)
+    for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$perf.ind.values
+    dumi=do.call(rbind,dumi)
+    
+    output_dis.pi.list[[i]]=fn.perf.ind.dist(df=dumi, YLAB='', Title=Keep.species[i])
+    
+    drop.ylab=TRUE
+    if(i%in%c(1,3)) drop.ylab=FALSE
+    output_dis.pi.ridge.list[[i]]=fn.perf.ind.dist.ridges(df=dumi, YLAB=drop.ylab, Title=Keep.species[i])
+    
+    output_boxplot.pi.list[[i]]=fn.perf.ind.boxplot(df=dumi, YLAB='', Title=Keep.species[i])
+    
+    
+    #3.2 Performance indicator polar plots
+    Kobe.per.ind=fn.create.list(Scenarios$Scenario)
+    for(q in 1:length(Kobe.per.ind)) Kobe.per.ind[[q]]= data.frame(Scenario=Scenarios$Scenario[q], Perf.ind='Kobe',value=outputs_RatPack[[i]][[q]]$Kobe$Probs/100)
+    Kobe.per.ind=do.call(rbind,Kobe.per.ind)
+    Per.ind.scaled=dumi%>%
+      group_by(Scenario,Perf.ind)%>%
+      summarise(value=median(Value))
+    
+    Per.ind.scaled=rbind(Per.ind.scaled%>%
+                           filter(!Perf.ind%in%c('F/FMSY','B/BMSY')),
+                         Kobe.per.ind)%>%
+      mutate(Perf.ind=factor(Perf.ind,levels=Perform.ind.levels2))%>%  
+      group_by(Perf.ind)%>%
+      mutate(value.rescaled=value/max(value))%>%
+      rename(Indicator=Perf.ind,
+             value.orig=value,
+             value=value.rescaled)%>%
+      arrange(Indicator)
+    fn.polar.plot(data= Per.ind.scaled, Title= "")
+    ggsave(paste0(outs.path,'/3_Polar.plot_',out.exten,'_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
+    rm(dumi)
+    
+    #3.3 Performance indicator lollipop plot
+    output_lollipop.list[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X="Scenario", strip='Indicator', Title= Keep.species[i])
+    output_lollipop.list2[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X='Indicator', strip="Scenario", Title= Keep.species[i])
+    
+    
+    #3.4 Quilt plot
+    output_quilt.list[[i]]=fn.quilt.plot(df=Per.ind.scaled%>%
+                                           data.frame()%>%
+                                           dplyr::select(-value)%>%
+                                           mutate(value=ifelse(Indicator%in%c('Recruits','Total catch','SSB'),
+                                                               round(value.orig),round(value.orig,1)))%>%
+                                           dplyr::select(-value.orig)%>%
+                                           spread(Indicator,value)%>%
+                                           `rownames<-`(Scenarios$Scenario)%>%
+                                           dplyr::select(-Scenario),
+                                         clr.scale=colorRampPalette(c('white','cadetblue2','cornflowerblue')),
+                                         col.breaks=50,
+                                         Titl=Keep.species[i],
+                                         Delta=delt[i]) 
+    
+    
+    #3.5 Time series of performance indicators
+    dumi=fn.create.list(Scenarios$Scenario)
+    for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$perf.indic.timeseries
+    dumi=do.call(rbind,dumi)
+    #ACA
+    fn.perf.ind.time.series(df=dumi%>%
+                              dplyr::select(-c(model_run,AssessFail))%>%
+                              gather(Perf.ind,Value,-c(iteration,scenario,year))%>%
+                              rename(Scenario=scenario)%>%mutate(Value=as.numeric(Value)),
+                            YLAB='Indicator value',
+                            Title=Keep.species[i])
+    ggsave(paste0(outs.path,'/1_Perf_indicator_time.series_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 10,height = 8,compression = "lzw")
+    
+    rm(Per.ind.scaled, dumi)
+    
+  } #end i
   
-  Quantiles=rbind(OMSSBquant%>%
-                    data.frame%>%
-                    mutate(Assessment='OM')%>%
-                    relocate(Assessment),
-                  EMSSBquant%>%
-                    data.frame)%>%
-    mutate(Species=Keep.species[i],
-           Scenario=Scenarios$Scenario[s])
+  #combined distribution of performance indicators
+  ggarrange(plotlist = output_dis.pi.list,nrow=1,common.legend = FALSE)%>%
+    annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot_',out.exten,'.tiff'),width = 10.5,height = 8,compression = "lzw")
   
-  #1. Calculate performance indicators
-  # Perf.ind=c(SSB='SSBcurrent',Depletion='Depletion',Recruits='Recruits',
-  #            Catch='TotCatch',Catch.RBC='RBC')
-  # Perf.ind.list=fn.create.list(Perf.ind)
-  # for(p in 1:length(Perf.ind))
-  # {
-  #   Perf.ind.list[[p]]=fn.percentiles(d=OMOut,grouping='Year',var=Perf.ind[[p]])%>%mutate(PerfInd=Perf.ind[[p]])
-  # }
-  # RBCyears <- sort(unique(EMSSBquant$RBCyear))
-  # EMSSBquant$Year <- as.numeric(EMSSBquant$Year)
-  # EMSSBquant$RBCyear <- factor(EMSSBquant$RBCyear, level=RBCyears)
-  # EMSSBquant <- rename(EMSSBquant, Assessment=RBCyear)
-  # ggplot(OMSSBquant, aes(x=Year)) +
-  #   geom_ribbon(aes(ymin=ymin, ymax=ymax), fill="gray", alpha=0.50) +
-  #   geom_line(aes(y=middle)) +
-  #   labs(y="SSB") +
-  #   geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
-  #   geom_ribbon(data=EMSSBquant,aes(ymin=lower, ymax=upper, fill=Assessment), alpha=0.20) +
-  #   scale_color_manual(values=rev(c("#08306b","cadetblue")))+ expand_limits(y=0)
-  # ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
+  ggarrange(plotlist = output_dis.pi.ridge.list,nrow=2,ncol=2,common.legend = FALSE)%>%
+    annotate_figure(left = textGrob('Density distribution', rot = 90, vjust = 1.4, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_distribution.plot.ridge_',out.exten,'.tiff'),
+         width = 11,height = 6,compression = "lzw")
+  
+  ggarrange(plotlist = output_boxplot.pi.list,nrow=1)%>%
+    annotate_figure(left = textGrob('Indicator value', rot = 90, vjust = 1, gp = gpar(cex = 1.7)))
+  ggsave(paste0(outs.path,'/1_Perf_indicator_box.plot_',out.exten,'.tiff'),width = 10,height = 8,compression = "lzw")
+  
+  #combined lollipop plot
+  figure=ggarrange(plotlist = output_lollipop.list,nrow=1)
+  annotate_figure(figure,bottom = textGrob("z-score", vjust=-1,gp = gpar(cex = 1.3)))
+  ggsave(paste0(outs.path,'/3_Lollipop.plot_',out.exten,'.tiff'),width = 10,height = 10,compression = "lzw")
+  
+  figure=ggarrange(plotlist = output_lollipop.list2,nrow=1)
+  annotate_figure(figure,bottom = textGrob("z-score", vjust=-1,gp = gpar(cex = 1.3)))
+  ggsave(paste0(outs.path,'/3_Lollipop.plot.2_',out.exten,'.tiff'),width = 10,height = 10,compression = "lzw")
+  
+  #combined quilt plot
+  ggarrange(plotlist = output_quilt.list,ncol=1)
+  ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
+
+    #ACA, update with 'set up this ratpack results_then delete.R' and Adapt this....also see mi Ratpack code
+
   
 }

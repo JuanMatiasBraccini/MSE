@@ -993,12 +993,13 @@ fn.percentiles=function(d,grouping,var)
 fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
 {
   df%>%
-    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))),
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))),
            Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
                     ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
                     ifelse(Perf.ind=='Catch','Total catch',
-                    Perf.ind))),
-           Perf.ind=factor(Perf.ind,levels=Perform.ind.levels),
+                    Perf.ind))))%>%
+    filter(Perf.ind%in%Perform.ind.levels)%>%
+    mutate(Perf.ind=droplevels(factor(Perf.ind,levels=Perform.ind.levels)),
            iteration=as.character(iteration))%>%
     filter(!is.na(Value))%>%
     group_by(year,Perf.ind,Scenario)%>%mutate(Median=median(Value,na.rm=T))%>%
@@ -1028,7 +1029,8 @@ fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
 fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
 {
   df%>%
-    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    filter(Value>0)%>%
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))))%>%
     ggplot(aes(Value,fill=Scenario))+
     geom_density(adjust=2,alpha=0.4)+
     facet_wrap(~Perf.ind,ncol=1,scales = 'free')+
@@ -1048,10 +1050,36 @@ fn.perf.ind.dist=function(df,YLAB='Density distribution',Title)
     ggtitle(Title)
 }
 
+fn.perf.ind.dist.ridges=function(df,YLAB,Title)
+{
+  p=df%>%
+    filter(Value>0)%>%
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))))%>%
+    ggplot(aes(Value,y=Perf.ind,fill = Scenario))+
+    geom_density_ridges(scale = 2,alpha=0.4)+
+    scale_x_continuous(trans='log10',labels = scales::comma)+xlab('Log10 value')+ylab('')+ 
+    my_theme()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=11),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.key.width = unit(0.5, "cm"),
+          legend.title = element_blank(),
+         # legend.position = 'bottom',
+          legend.box.margin=margin(-10,-10,-15,-10))+
+    ggtitle(Title)
+  if(YLAB) p=p+theme(axis.text.y=element_blank())
+  return(p)
+}
+
 fn.perf.ind.boxplot=function(df,YLAB='Indicator value',Title)
 {
   df%>%
-    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    filter(Value>0)%>%
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))))%>%
     ggviolin(x = "Scenario", y = "Value", fill = "Scenario",
              add = c("jitter","boxplot"), add.params = list(fill = "white",alpha=0.5))+
     facet_wrap(~Perf.ind,ncol=1,scales = 'free_y')+
@@ -1098,14 +1126,13 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
     kernels=KernelD%>%distinct(CI,col)%>%pull(col)
     names(kernels)=KernelD%>%distinct(CI,col)%>%pull(CI)
     
-    Pr.d=data.frame(
-      Prob=c(sum(ifelse(Probs$x >= 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
-             sum(ifelse(Probs$x < 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
-             sum(ifelse(Probs$x >= 1 & Probs$y > 1, 1, 0))/length(Probs$x)*100,
-             sum(ifelse(Probs$x < 1 & Probs$y > 1, 1, 0))/length(Probs$x) * 100),
-      col=RiskColors[c('Low','Medium','High','Severe')],
-      x=rep(-10,4),  #dummy
-      y=rep(-10,4))
+    Pr.d=data.frame(Prob=c(sum(ifelse(Probs$x >= 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
+                           sum(ifelse(Probs$x < 1 & Probs$y <= 1, 1, 0))/length(Probs$x)*100,
+                           sum(ifelse(Probs$x >= 1 & Probs$y > 1, 1, 0))/length(Probs$x)*100,
+                           sum(ifelse(Probs$x < 1 & Probs$y > 1, 1, 0))/length(Probs$x) * 100),
+                    col=RiskColors[c('Low','Medium','High','Severe')],
+                    x=rep(-10,4),  
+                    y=rep(-10,4))
     pr.ds=Pr.d%>%pull(col)
     Nms.probs=round(Pr.d%>%pull(Prob),1)
     Nms.probs=ifelse(Nms.probs>0 & Nms.probs<0.1,'<0.1',Nms.probs)
@@ -1169,7 +1196,7 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
 fn.polar.plot=function(data,Title='',Subtitle='',Caption='')
 {
   p=data%>%
-    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))))%>%
     ggplot(aes(x = Scenario, y = value,fill = Scenario)) +
     geom_col(width = 1, color = "white") + 
     facet_wrap(~Indicator)+
@@ -1205,7 +1232,7 @@ fn.lolipot.plot=function(data,X,strip,Title='')
                                    (z > 0 & Indicator%in%Perf.ind_neg), "low",
                                  "high")))%>%
     ungroup()%>%
-    mutate(Scenario=factor(Scenario,levels=paste0('S',1:length(unique(Scenario)))))%>%
+    mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))))%>%
     ggdotchart(x = X, y = "z", color = "z.group",  sorting = "none",   
                palette = c("chartreuse4", "brown"),
                add = "segments",  add.params = list(color = "z.group", size = 1), 
@@ -1251,13 +1278,14 @@ fn.quilt.plot=function(df,clr.scale,col.breaks,Titl,Delta)
 
 fn.RatPack.summary=function(dat)
 {
-  vec=c(Fail='AssessFail',RBC='RBC',
-        OM_depletion='Depletion',EM_depletion='estDepletion',
-        OM_SSB='SSBcurrent',EM_SSB='estSSBcurrent')
+  vec=c(Fail='AssessFail',RBC='Catch.RBC',
+        Catch='Catch',Depletion='Depletion',
+        SSB='SSB',B.over.BMSY='B.over.BMSY',
+        F.over.FMSY='F.over.FMSY')
   dumi=fn.create.list(names(dat))
   for(e in 1:length(dat))
   {
-    dd=dat[[e]]$perf.indic.timeseries%>%filter(Period=='Sim')
+    dd=dat[[e]]$perf.indic.timeseries%>%filter(grepl('EM_',model_run))
     d=lapply(dd[vec], function(x) summary(x))
     d=as.data.frame(do.call(rbind,d))%>%
           rownames_to_column('Quantity')%>%
