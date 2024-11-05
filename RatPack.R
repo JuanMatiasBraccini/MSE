@@ -48,7 +48,7 @@ fn.percentiles=function(d,grouping,var)
 }
 OMSSBquant=fn.percentiles(d=OMOut,grouping='Year',var='SSBcurrent')
 EMSSBquant=fn.percentiles(d=EMOut %>%
-                            filter(RBCyear==2022 | RBCyear==2025) %>%
+                            filter(RBCyear%in%c(2022,2032,max(OMOut$Year))) %>%
                             group_by(RBCyear) %>%
                             pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
                                          names_to="Year", values_to="estSSB", names_prefix="X"),
@@ -68,7 +68,7 @@ ggplot(OMSSBquant, aes(x=Year)) +
   labs(y="SSB") +
   geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
   geom_ribbon(data=EMSSBquant,aes(ymin=lower, ymax=upper, fill=Assessment), alpha=0.20) +
-  scale_color_manual(values=rev(c("#08306b","cadetblue")))+ expand_limits(y=0)
+ expand_limits(y=0)
 
 
 ggsave(handl_OneDrive(paste0(hndl.out,'/length_cpue_only years with catch_Neff50_CV_0.05_95CI_200 sims.tiff')),width = 6,height = 6,compression = "lzw")

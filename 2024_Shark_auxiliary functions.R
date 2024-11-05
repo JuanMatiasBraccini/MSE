@@ -941,9 +941,6 @@ fn.get.RatPack.results=function(spi,PATH,last_yr)
   res[[1]] <- filter(res[[1]], Year<=last_yr) # Remove the final year from the results from the new version of ratpack (it adds
   # an extra year with no assessment).
   
-  #separate the data for the simulation period
-  dd1 <- filter(res[[1]], Period == "Sim")    
-  
   d <- res[[1]] %>%
     filter(Year <=last.yr.EM) %>%
     rename(estDepletion=estDepletion_PreviousYr) %>%
@@ -970,7 +967,7 @@ fn.get.RatPack.results=function(spi,PATH,last_yr)
   d_rel_err$SSB_rel_error <- (d_rel_err$estSSBcurrent_1 - d_rel_err$SSBcurrent) / d_rel_err$SSBcurrent
   d_rel_err$Depletion_rel_error <- (d_rel_err$estDepletion_1 - d_rel_err$Depletion) / d_rel_err$Depletion
   
-  return(list(d=d, dd1=dd1, d_rel_err=d_rel_err, d_current=d_current))
+  return(list(d=d, d_rel_err=d_rel_err))
 }
 
 
@@ -995,17 +992,18 @@ fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
   df%>%
     mutate(Scenario=droplevels(factor(Scenario,levels=unique(Scenario))),
            Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
-                    ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
-                    ifelse(Perf.ind=='Catch','Total catch',
-                    Perf.ind))))%>%
+                           ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                                  ifelse(Perf.ind=='Catch','Total catch',
+                                         Perf.ind))))%>%
     filter(Perf.ind%in%Perform.ind.levels)%>%
     mutate(Perf.ind=droplevels(factor(Perf.ind,levels=Perform.ind.levels)),
            iteration=as.character(iteration))%>%
     filter(!is.na(Value))%>%
     group_by(year,Perf.ind,Scenario)%>%mutate(Median=median(Value,na.rm=T))%>%
-    ggplot(aes(year,Value,color=iteration))+    
+    ggplot(aes(year,Value,color=iteration))+ 
+    geom_vline(xintercept = (assessment.year):last.yr.EM,alpha=0.1,size=3,colour='cadetblue2')+
     geom_line(alpha=0.4)+
-    geom_line(aes(year,Median),color='chocolate3',size=.95)+
+    geom_line(aes(x=year,y=Median),color='chocolate3',size=.95)+
     ggh4x::facet_grid2(Perf.ind~Scenario,scales = TRUE, independent = "x",drop=TRUE)+
     ylab(YLAB)+xlab('')+
     my_theme()%+replace% 
@@ -1020,9 +1018,9 @@ fn.perf.ind.time.series=function(df,YLAB='Indicator distribution',Title)
           legend.title = element_blank(),
           legend.position = 'none',
           legend.box.margin=margin(-25,0,-10,-10),
-          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=0.5))+
     ggtitle(Title)+
-    scale_color_manual(values=rep("grey70", length(unique(df$iteration))))+
+    scale_color_manual(values=rep("grey50", length(unique(df$iteration))))+
     expand_limits(y=0)
 }
 
@@ -1151,7 +1149,7 @@ kobePlot <- function(f.traj,b.traj,Years,Titl,Probs=NULL,pt.size,txt.col,line.co
     scale_x_continuous(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0))+
     geom_path(linetype = 2, size = 0.5,color=line.col)+
-    geom_point(size=pt.size,color=line.col,alpha=seq(0.2,1,length.out=length(dta$yr)))+
+    geom_point(size=pt.size,color=line.col,alpha=seq(0.05,1,length.out=length(dta$yr)))+
    # geom_point(aes(x=dta[1,'x'],y=dta[1,'y']),size=4,shape=22,fill='white',alpha=.3)+
   #  geom_point(aes(x=dta[nrow(dta),'x'],y=dta[nrow(dta),'y']),size=4,shape=25,fill='white',alpha=.3)+      
    # geom_text_repel(data=dta[1,],aes(x=x,y=y,label=yr),size=YrSize,color=txt.col)+
@@ -1278,19 +1276,128 @@ fn.quilt.plot=function(df,clr.scale,col.breaks,Titl,Delta)
 
 fn.RatPack.summary=function(dat)
 {
-  vec=c(Fail='AssessFail',RBC='Catch.RBC',
-        Catch='Catch',Depletion='Depletion',
+  vec=c(Catch='Catch',Depletion='Depletion',
         SSB='SSB',B.over.BMSY='B.over.BMSY',
         F.over.FMSY='F.over.FMSY')
   dumi=fn.create.list(names(dat))
+  Table.fail=Table.summary=dumi
   for(e in 1:length(dat))
   {
     dd=dat[[e]]$perf.indic.timeseries%>%filter(grepl('EM_',model_run))
+    
+    Table.fail[[e]]=dd%>%group_by(AssessFail,year)%>%tally()%>%spread(year,n,fill='')%>%mutate(Scenario=names(dat)[e])
+    Table.summary[[e]]=dd%>%group_by(AssessFail,year)%>%
+                  summarise(Min.SSB=min(SSB),Median.SSB=median(SSB),Max.SSB=max(SSB),
+                            Min.Catch=min(Catch),Median.Catch=median(Catch),Max.Catch=max(Catch),
+                            Min.Depletion=min(Depletion),Median.Depletion=median(Depletion),Max.Depletion=max(Depletion))%>%
+      mutate(Scenario=names(dat)[e])
     d=lapply(dd[vec], function(x) summary(x))
     d=as.data.frame(do.call(rbind,d))%>%
           rownames_to_column('Quantity')%>%
           mutate(Scenario=names(dat)[e])
     dumi[[e]]=d
   }
-  return(do.call(rbind,dumi)%>%arrange(Quantity))
+  return(list(Table.fail=do.call(rbind,Table.fail),
+              Table.summary=do.call(rbind,Table.summary),
+              Table.overall.summary=do.call(rbind,dumi)%>%arrange(Quantity)))
+}
+
+
+fn.relative.error=function(dd)
+{
+  #Relative error (SSB0, SSB and depletion)
+  SSB0_rel_error_dat <- dd %>% 
+    group_by(Year, Scenario) %>%
+    reframe(SSB0_rel_error = quantile(SSB0_rel_error, 
+                                      c(0.1, 0.25, 0.50, 0.75,  0.90), na.rm = T), 
+            q = c(0.1, 0.25, 0.50, 0.75, 0.90)) %>%
+    pivot_wider(names_from = q, values_from = SSB0_rel_error)
+  
+  SSB_rel_error_dat <- dd %>% 
+    group_by(Year, Scenario) %>%
+    reframe(SSB_rel_error = quantile(SSB_rel_error, 
+                                     c(0.1, 0.25, 0.50, 0.75, 0.90), na.rm = T), 
+            q = c(0.1, 0.25, 0.50, 0.75, 0.90)) %>%
+    pivot_wider(names_from = q, values_from = SSB_rel_error)
+  
+  Dep_rel_error_dat <- dd %>% 
+    group_by(Year, Scenario) %>%
+    reframe(Depletion_rel_error = quantile(Depletion_rel_error, 
+                                           c(0.1, 0.25, 0.50, 0.75, 0.90), na.rm = T),
+            q = c(0.1, 0.25, 0.50, 0.75, 0.90)) %>%
+    pivot_wider(names_from = q, values_from = Depletion_rel_error)
+  ## add some labels
+  SSB0_rel_error_dat$Var <- "SSB0"
+  SSB_rel_error_dat$Var <- "SSB"
+  Dep_rel_error_dat$Var <- "Depletion"
+  rel_error_dat <- bind_rows(SSB0_rel_error_dat, SSB_rel_error_dat, Dep_rel_error_dat)
+  rel_error_dat$Var <- factor(rel_error_dat$Var, levels = c("SSB0", "SSB", "Depletion"))
+  colnames(rel_error_dat) <- c("Year", "Scenario", "RE_10", "RE_25", "RE_50", "RE_75", "RE_90", "Var")
+  
+  ## create the plot
+  rel_error_plot <- ggplot(data = rel_error_dat, aes(x = Year, y = RE_50))+ 
+    facet_grid(Var~Scenario, scales='free')+
+    geom_ribbon(aes(ymin = RE_10, ymax = RE_90), alpha = 0.4, fill='cadetblue2',  colour = 'cadetblue4')+
+    geom_hline(yintercept = 0, linetype = "dashed")+
+    geom_line()+
+    geom_point(colour='black',size=1.15)+
+    #geom_ribbon(aes(ymin = RE_25, ymax = RE_75), alpha = 0.3, colour = NA)+
+    labs(y = "Relative error", x = "Year")+
+    my_theme()%+replace%
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=8),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.key.width = unit(0.5, "cm"),
+          legend.title = element_blank(),
+          legend.position = 'none',
+          legend.box.margin=margin(-25,0,-10,-10),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=0.5))
+  return(rel_error_plot)
+}
+
+fn.compare.OM.EM.trends=function(OM, EM, YLAB,Title='')
+{
+  p=bind_rows(OM, EM)%>%
+    ggplot(aes(x = Year, y = Mean, colour = Analysis, fill = Analysis, legend.position="none"))+
+    facet_wrap(~Scenario,ncol=2)+
+    geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.3, colour = NA)+
+    geom_line()+
+    geom_point(size=0.25)+
+    labs(x = "Year", y = YLAB)+
+    scale_colour_tableau(direction = -1)+
+    scale_fill_tableau(direction = -1)+
+    my_theme()%+replace% 
+    theme(panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size=11),
+          axis.text = element_text(size=8),
+          plot.title = element_text(size=15,hjust=0),
+          axis.title = element_text(size=14),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.text = element_text(size=8),
+          legend.key.width = unit(0.5, "cm"),
+          legend.title = element_blank(),
+          legend.position = 'top',
+          legend.box.margin=margin(-25,0,-10,-10),
+          axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
+    ggtitle(Title)+
+    expand_limits(y=0)
+  return(p)
+}
+
+fn.compare.OM.EM.random=function(d_3_sims,OM.var,EM.var,YLAB)
+{
+  
+  p = ggplot(data = d_3_sims)+
+    facet_wrap(~Scenario, ncol=2)+
+    geom_line(aes_string(x = 'Year', y = OM.var, colour = 'iter'))+
+    geom_point(aes_string(x = 'Year', y = EM.var, colour = 'iter'))+
+    labs(x = "Year", y = YLAB)+
+    expand_limits(y = 0) + xlim(2010, max(d_3_sims$Year))+
+    my_theme()%+replace% 
+    theme(legend.position = 'top')
+  return(p)
 }

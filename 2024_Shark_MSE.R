@@ -100,6 +100,8 @@ Management_scenarios=read_excel(hndl.mse.comp,   sheet = "Estimation model",skip
 
 Perform.ind=Management_objectives%>%filter(Used.in.MSE=='Yes')%>%distinct(Perf.ind.name,.keep_all = T)%>%pull(Perf.ind.name)
 Perform.ind.levels=c("Recruits","SSB","Depletion","F/FMSY","B/BMSY","Total catch","Catch variability")
+Perform.ind.levels1=Perform.ind.levels
+Perform.ind.levels1[Perform.ind.levels1=="Recruits"]="SSB0"
 Perform.ind.levels2=c("Recruits","SSB","Depletion","Kobe","Total catch","Catch variability")  
 Perf.ind_pos=c('Recruits','SSB','Depletion','Kobe','Total catch')
 Perf.ind_neg=c('Catch variability')
@@ -124,6 +126,8 @@ re.fit.SSMSE.OM=FALSE                  # set to TRU to re fit OM following chang
 run.SSMSE=FALSE                        # set to TRUE to run SSMSE
 First.Run.RatPack=FALSE                # set to TRUE to generate OPD,HSE and proj files (don't run again as it will over write them)
 run.RatPack=FALSE                      # set to TRUE to run RatPack
+drop.ass.fail=FALSE                    # turn to TRUE to only keep assessments that passed   ACA. MISSING
+replace.OM.with.EM=FALSE               #turn to TRUE to replace OM perf ind values to EM values   ACA. MISSING
 niters <- 2                            # number of simulations per scenario (50, 100 will take way too long)
 assessment.year=2022                   # year latest stock assessment 
 last.year.obs.catch=2021               # last year with observed catch
@@ -423,7 +427,7 @@ if(run.RatPack)
       spi=paste0(sp,'_sim_')
       for(k in 1:niters)
       {
-        for(x in length(SS.file.years))
+        for(x in 1) #length(SS.file.years)
         {
           nn=paste0(spi,k,'_year_',SS.file.years[x])
           if(!file.exists(paste0(sp_path_scen,'/Stock_Synthesis/',nn,'/Report.sso')))
@@ -756,7 +760,7 @@ if(run.RatPack)
              Catch='TotCatch',Catch.RBC='RBC',Catch.TAC='TAC')
   
   #1. Extract quantities    
-  tic()   #0.17 secs per species-scenario-simulation-proj.year
+  tic()   #0.1 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
@@ -768,25 +772,39 @@ if(run.RatPack)
       print(paste('RatPack Outputs for ',Keep.species[i],'    Scenario',Scenarios$Scenario[s],'-----------'))
       sp_path_scen=paste(out.path.RatPack,Keep.species[i],Scenarios$Scenario[s],sep='/')
       spi=str_remove(Keep.species[i],' shark')
+      
+      #Get RatPack results
       xx=fn.get.RatPack.results(spi, PATH=sp_path_scen, last_yr=last.yr.EM)
       
-      # OMOut <- read.table(paste(sp_path_scen,'Results',paste0(spi,'_results_1.out'),sep='/'), 
-      #                     skip=1, header=TRUE, fill=TRUE)
-      # Ufleet<- read.table(paste(sp_path_scen,'Results',paste0(spi,'_totcatch.out'),sep='/'), 
-      #                     skip=1, header=TRUE, fill=TRUE)
-      # EMOut <- read.table(paste(sp_path_scen,'Debug',paste0(spi,'trace_plot.dat'),sep='/'), 
-      #                     header=TRUE, fill=TRUE)
-      
-      #Get Kobe time series from EM Report file of final assessment year
+ 
+      #Get Kobe and time series from EM Report file
       Store.Kobe=fn.create.list(1:niters)
+      Perf.ind_EM=Store.Kobe
       spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
       for(k in 1:niters)
       {
-        nn=paste0(spi,k,'_year_',last.yr.EM)
+        nn=paste0(spi,k,'_year_',SS.file.years[1]) #last.yr.EM
         Report=SS_output(paste0(sp_path_scen,'/Stock_Synthesis/',nn),covar=F,forecast=F,readwt=F)
         Store.Kobe[[k]]=Report$Kobe%>%mutate(Iteration=k)
+        Perf.ind_EM[[k]]=Report$derived_quants%>%
+                          filter(grepl(paste(c('SSB','Recr','Bratio'),collapse='|'),Label))%>%
+                          dplyr::select(Label,Value)%>%
+                          mutate(Year=str_remove(Label, ".*_"))%>%
+                          filter(!Year%in%c("Btgt","Initial","MSY","SPR","unfished","Virgin"))%>%
+                          mutate(Year=as.numeric(Year))%>%
+                          filter(Year%in%unique(xx$d$Year))%>%
+                          mutate(Label=str_extract(Label, ".+?(?=_)"))%>%
+                          spread(Label,Value)%>%
+                          rename(Depletion=Bratio,
+                                 Recruits=Recr)%>%
+                          mutate(Depletion=ifelse(row_number()==1,1,Depletion),
+                                 iteration=k)
+        
         rm(Report)
       }
+      Perf.ind_EM=do.call(rbind,Perf.ind_EM)%>%
+        filter(Year<=last.yr.EM)
+      
       Kobe=do.call(rbind,Store.Kobe)%>%
         filter(Yr<=last.yr.EM)%>%
         rename(year=Yr,
@@ -801,7 +819,6 @@ if(run.RatPack)
         filter(year==last.yr.EM)%>%
         dplyr::select(B.over.BMSY,F.over.FMSY)%>%
         rename(x=B.over.BMSY,y=F.over.FMSY)
-      
       xx_kobe=kobePlot(f.traj=Kobe.median$f.traj,
                        b.traj=Kobe.median$b.traj,
                        Years=Kobe.median$year,
@@ -815,10 +832,12 @@ if(run.RatPack)
                        Leg.txt.size=10)
       
       
-      #Perf indicators for last year of assessment   ACA: uncomment filter(is.na(AssessFail)| AssessFail==0)
-      dis.perf.in=c(Perf.ind[-match(c("RBC","TAC"),Perf.ind)],'B.over.BMSY','F.over.FMSY')
-      a=xx$d%>%
-      #  filter(is.na(AssessFail)| AssessFail==0)%>%
+      #Get Perf indicators for last year of assessment   
+      dis.perf.in=c("estSSBcurrent","estDepletion","estSSB0","TotCatch","B.over.BMSY","F.over.FMSY")
+      names(dis.perf.in)=c('SSB','Depletion','SSB0','Catch',"B.over.BMSY","F.over.FMSY")
+      a=xx$d
+      if(drop.ass.fail) a=a%>%filter(is.na(AssessFail)| AssessFail==0)  
+      a=a%>%
         left_join(Kobe%>%rename(Year=year,Sim=iteration),by=c("Year","Sim"))%>%
         filter(Year==last.yr.EM)%>%
         mutate(scenario=Scenarios$Scenario[s])%>%
@@ -828,10 +847,10 @@ if(run.RatPack)
         filter(!dis.perf.in=='Catch')%>%
         rename(Perf.ind=dis.perf.in)
       
-      
-      #Total catch and catch variability
-      katch=xx$d%>%
-      #  filter(is.na(AssessFail)| AssessFail==0)%>%
+        #add total catch and catch variability
+      katch=xx$d
+      if(drop.ass.fail) katch=katch%>%filter(is.na(AssessFail)| AssessFail==0)   
+      katch=katch%>%
         dplyr::select(TotCatch,Sim,Year)%>%
         rename(year=Year,
                iteration=Sim,
@@ -854,24 +873,40 @@ if(run.RatPack)
       Katch.var.perf.ind=do.call(rbind,AAV.ktch)
       Katch.tot.perf.ind=do.call(rbind,Tot.ktch)
       
+      perf.ind.values=rbind(a,Katch.var.perf.ind,Katch.tot.perf.ind)%>%
+                        mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
+                                        ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
+                                        Perf.ind)),
+                               Perf.ind=factor(Perf.ind,levels=Perform.ind.levels1))
       
-      #Store stuff
-      Store[[s]]=list(perf.ind.values=rbind(a,Katch.var.perf.ind,Katch.tot.perf.ind)%>%
-                                        mutate(Perf.ind=ifelse(Perf.ind=='F.over.FMSY','F/FMSY',
-                                                        ifelse(Perf.ind=='B.over.BMSY','B/BMSY',
-                                                        Perf.ind)),
-                                               Perf.ind=factor(Perf.ind,levels=Perform.ind.levels)),
-                      perf.indic.timeseries=xx$d%>%
-                                 #  filter(is.na(AssessFail)| AssessFail==0)%>%
-                                    rename(year=Year,
-                                           iteration=Sim)%>%
-                                    mutate(scenario=Scenarios$Scenario[s],
-                                           Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
-                                           dumi=ifelse(Period=='OM','',last.yr.EM),
-                                           model_run=paste(Period,dumi,sep='_'))%>%
-                                    dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
-                                                    any_of(Perf.ind),dumi))%>%
-                                    left_join(Kobe,by=c("year","iteration")),
+      
+      #Get time series of Performance indicators
+      perf.indic.timeseries=xx$d
+      if(drop.ass.fail) perf.indic.timeseries=perf.indic.timeseries%>%filter(is.na(AssessFail)| AssessFail==0) 
+      perf.indic.timeseries=perf.indic.timeseries%>%
+                  rename(year=Year,
+                         iteration=Sim)%>%
+                  mutate(scenario=Scenarios$Scenario[s],
+                         Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
+                         dumi=ifelse(Period=='OM','',last.yr.EM),
+                         model_run=paste(Period,dumi,sep='_'),
+                         SSBcurrent=ifelse(Period=='EM',estSSBcurrent,SSBcurrent),
+                         Depletion=ifelse(Period=='EM',estDepletion,Depletion))%>%
+                  dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
+                                  any_of(Perf.ind),dumi))%>%
+                  left_join(Kobe,by=c("year","iteration"))
+      if(replace.OM.with.EM)
+      {
+        perf.indic.timeseries=perf.indic.timeseries%>%
+                        dplyr::select(-c(SSB,Depletion,Recruits))%>%
+                        left_join(Perf.ind_EM%>%rename(year=Year), by=c('iteration','year'))
+      }
+      
+      
+      #Store in list
+      Store[[s]]=list(d=xx$d,
+                      perf.ind.values=perf.ind.values,
+                      perf.indic.timeseries=perf.indic.timeseries,
                       d_rel_err=xx$d_rel_err,
                       Kobe=list(Probs=xx_kobe$prob.green,   
                                 kobe=xx_kobe$kobe))
@@ -900,12 +935,18 @@ if(run.RatPack)
   } #end i
   toc()
   
-  #2. Summarize model runs
-  Rat.pack.summary=fn.create.list(Keep.species)
-  for(i in 1:N.sp) Rat.pack.summary[[i]]=fn.RatPack.summary(dat=outputs_RatPack[[i]])%>%mutate(Species=Keep.species[i])
-  write.csv(do.call(rbind,Rat.pack.summary),paste0(outs.path,'/Table 2.Run_summary_',out.exten,'_','.csv'),row.names = F)
   
+  #2. Summarize model runs 
+  for(i in 1:N.sp)
+  {
+    Rat.pack.summary=fn.RatPack.summary(dat=outputs_RatPack[[i]])
+    han.smry=paste0(outs.path,'/Summaries/',Keep.species[i],"_")
+    write.csv(Rat.pack.summary$Table.fail,paste0(han.smry,out.exten,'_Table.fail','.csv'),row.names = F)
+    write.csv(Rat.pack.summary$Table.summary,paste0(han.smry,out.exten,'_Table.summary','.csv'),row.names = F)
+    write.csv(Rat.pack.summary$Table.overall.summary,paste0(han.smry,out.exten,'_Table.overall.summary','.csv'),row.names = F)
+  }
   
+    
   #3. Plot figures
   delt=c(-0.175,-0.2,-0.2,-0.2)  
   for(i in 1:N.sp)
@@ -915,8 +956,6 @@ if(run.RatPack)
     aaid=which(Scenarios$Difference%in%Not.tested.in.Rat.Pack)
     if(length(aaid)>0) Scenarios=Scenarios[-aaid,]
     
-    
-    #replace 'Get.SSMSE.perf.indic' with 'outputs_RatPack'
     
     #3.1 Distribution of performance indicators
     dumi=fn.create.list(Scenarios$Scenario)
@@ -954,6 +993,7 @@ if(run.RatPack)
     ggsave(paste0(outs.path,'/3_Polar.plot_',out.exten,'_',Keep.species[i],'.tiff'),width = 6,height = 8,compression = "lzw")
     rm(dumi)
     
+    
     #3.3 Performance indicator lollipop plot
     output_lollipop.list[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X="Scenario", strip='Indicator', Title= Keep.species[i])
     output_lollipop.list2[[i]]=fn.lolipot.plot(data= Per.ind.scaled, X='Indicator', strip="Scenario", Title= Keep.species[i])
@@ -979,7 +1019,6 @@ if(run.RatPack)
     dumi=fn.create.list(Scenarios$Scenario)
     for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$perf.indic.timeseries
     dumi=do.call(rbind,dumi)
-    #ACA
     fn.perf.ind.time.series(df=dumi%>%
                               dplyr::select(-c(model_run,AssessFail))%>%
                               gather(Perf.ind,Value,-c(iteration,scenario,year))%>%
@@ -990,6 +1029,71 @@ if(run.RatPack)
            width = 10,height = 8,compression = "lzw")
     
     rm(Per.ind.scaled, dumi)
+    
+    
+    #Compare some OM and EM random iterations
+    dumi=fn.create.list(Scenarios$Scenario)
+    for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$d
+    dumi=do.call(rbind,dumi)
+    Samps=sample(unique(dumi$Sim),3)
+      #SSB 
+    fn.compare.OM.EM.random(d_3_sims=dumi%>%
+                              filter(Sim %in% Samps)%>%
+                              mutate(iter=as.character(Sim)),
+                            OM.var='SSBcurrent',
+                            EM.var='estSSBcurrent',
+                            YLAB="SSB (t)")
+    ggsave(paste0(outs.path,'/OM vs EM/Random_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 6,height = 6,compression = "lzw")
+      #Depletion
+    fn.compare.OM.EM.random(d_3_sims=dumi%>%
+                              filter(Sim %in% Samps)%>%
+                              mutate(iter=as.character(Sim)),
+                            OM.var='Depletion',
+                            EM.var='estDepletion',
+                            YLAB="Depletion")
+    ggsave(paste0(outs.path,'/OM vs EM/Random_Depletion_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 6,height = 6,compression = "lzw")
+    
+    
+    #Compare OM and EM trends
+      #SSB
+    fn.compare.OM.EM.trends(OM = dumi %>%
+                              group_by(Year, Scenario) %>%
+                              do(data.frame(rbind(Hmisc::smean.cl.boot(.$SSBcurrent))))%>%
+                              mutate(Analysis = "Operating Model"),
+                            EM= dumi %>%
+                              group_by(Year, Scenario) %>% 
+                              do(data.frame(rbind(Hmisc::smean.cl.boot(.$estSSBcurrent)))) %>% 
+                              drop_na()%>%
+                              mutate(Analysis = "Estimation Model"),
+                            YLAB="SSB (t)")
+    ggsave(paste0(outs.path,'/OM vs EM/Trend_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 6,height = 6,compression = "lzw")
+    
+      #Depletion
+    fn.compare.OM.EM.trends(OM = dumi %>%
+                              group_by(Year, Scenario) %>%
+                              do(data.frame(rbind(Hmisc::smean.cl.boot(.$Depletion))))%>%
+                              mutate(Analysis = "Operating Model"),
+                            EM= dumi %>%
+                              group_by(Year, Scenario) %>% 
+                              do(data.frame(rbind(Hmisc::smean.cl.boot(.$estDepletion)))) %>% 
+                              drop_na()%>%
+                              mutate(Analysis = "Estimation Model"),
+                            YLAB="Depletion")
+    ggsave(paste0(outs.path,'/OM vs EM/Trend_depletion_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 6,height = 6,compression = "lzw")
+    
+    
+    #Relative error
+    dumi=fn.create.list(Scenarios$Scenario)
+    for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$d_rel_err
+    dumi=do.call(rbind,dumi)
+    fn.relative.error(dd=dumi)
+    ggsave(paste0(outs.path,'/OM vs EM/Relative error_',out.exten,'_',Keep.species[i],'.tiff'),
+           width = 8,height = 6,compression = "lzw")
+    rm(dumi)
     
   } #end i
   
@@ -1019,8 +1123,5 @@ if(run.RatPack)
   #combined quilt plot
   ggarrange(plotlist = output_quilt.list,ncol=1)
   ggsave(paste0(outs.path,'/4_Quilt.plot_',out.exten,'.tiff'),width = 7,height = 10,compression = "lzw")
-
-    #ACA, update with 'set up this ratpack results_then delete.R' and Adapt this....also see mi Ratpack code
-
   
 }
