@@ -934,6 +934,8 @@ fn.re.run.SS=function(WD,prev.ass)
 }
 fn.get.RatPack.results=function(spi,PATH,last_yr)
 {
+  EMOut <- read.table(paste0(PATH,'/Debug/',spi,'trace_plot.dat'), header=TRUE, fill=TRUE)
+  
   res <- combine_results(proj=read_proj(proj_file_name=paste0(spi,'_test.proj'),
                                           file_path=PATH,
                                           in_dir="Inputs"),
@@ -942,7 +944,6 @@ fn.get.RatPack.results=function(spi,PATH,last_yr)
   # an extra year with no assessment).
   
   d <- res[[1]] %>%
-    filter(Year <=last.yr.EM) %>%
     rename(estDepletion=estDepletion_PreviousYr) %>%
     dplyr::select(any_of(data_fields))%>%
     mutate(Scenario=Scenarios$Scenario[s],
@@ -967,7 +968,7 @@ fn.get.RatPack.results=function(spi,PATH,last_yr)
   d_rel_err$SSB_rel_error <- (d_rel_err$estSSBcurrent_1 - d_rel_err$SSBcurrent) / d_rel_err$SSBcurrent
   d_rel_err$Depletion_rel_error <- (d_rel_err$estDepletion_1 - d_rel_err$Depletion) / d_rel_err$Depletion
   
-  return(list(d=d, d_rel_err=d_rel_err))
+  return(list(d=d, d_rel_err=d_rel_err, EMOut=EMOut))
 }
 
 
@@ -978,8 +979,6 @@ fn.percentiles=function(d,grouping,var)
            group_by_at(grouping)%>%
            summarise(per_5=quantile(!!as.name(var), probs=0.05, na.rm=TRUE),
                      per_95=quantile(!!as.name(var), probs=0.95, na.rm=TRUE),
-                     
-                     
                      ymin=quantile(!!as.name(var), probs=0.10, na.rm=TRUE),
                      lower=quantile(!!as.name(var), probs=0.25, na.rm=TRUE),
                      middle=quantile(!!as.name(var), probs=0.5, na.rm=TRUE),

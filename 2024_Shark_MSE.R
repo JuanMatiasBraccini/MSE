@@ -127,11 +127,14 @@ run.SSMSE=FALSE                        # set to TRUE to run SSMSE
 First.Run.RatPack=FALSE                # set to TRUE to generate OPD,HSE and proj files (don't run again as it will over write them)
 run.RatPack=FALSE                      # set to TRUE to run RatPack
 drop.ass.fail=FALSE                    # turn to TRUE to only keep assessments that passed   ACA. MISSING
-replace.OM.with.EM=FALSE               #turn to TRUE to replace OM perf ind values to EM values   ACA. MISSING
-niters <- 2                            # number of simulations per scenario (50, 100 will take way too long)
+replace.1_out.with.SS=TRUE              # turn to TRUE to replace _Results_1_out with SS time series
+re.run.SS.last.ass.yr=FALSE            # re run SS last year of Assessment if Report file not created.
+do.SS.plots=FALSE                      # genereate r4ss plots
+
+niters <- 10                            # number of simulations per scenario (50, 100 will take way too long)
 assessment.year=2022                   # year latest stock assessment 
 last.year.obs.catch=2021               # last year with observed catch
-Proj.years=10                          # number of projected years (25)
+Proj.years=20                          # number of projected years (25)
 Proj.years.between.ass=5               # years between assessments in the projected period
 Proj.years.obs=seq(1,Proj.years,by=1)  # sampled years in the projected period
 Proj.assessment.years=seq(assessment.year,(assessment.year+Proj.years),Proj.years.between.ass)[-1]
@@ -399,10 +402,11 @@ if(First.Run.RatPack)
 #2. Execute RatPack 
 if(run.RatPack)
 {
-  SS.file.years=c(assessment.year,Proj.assessment.years)
+  SS.file.years=as.numeric(unique(word(list.files(paste0(out.path.RatPack,'/Whiskery shark/S1/Stock_Synthesis')), 2, sep="year_")))
   last.yr.EM=SS.file.years[length(SS.file.years)]
+  #last.yr.EM=Proj.assessment.years[length(Proj.assessment.years)-1]
   
-  tic()  #13 secs per species-scenario-simulation-proj.year
+  tic()  #9 secs per species-scenario-simulation-proj.year
   for(i in 1:N.sp)
   {
     Scenarios=SCENARIOS[[i]]
@@ -424,21 +428,25 @@ if(run.RatPack)
       
       
       #run SS EM for last assessment year if Report file not created by Ratpack
-      spi=paste0(sp,'_sim_')
-      for(k in 1:niters)
+      if(re.run.SS.last.ass.yr)
       {
-        for(x in 1) #length(SS.file.years)
+        spi=paste0(sp,'_sim_')
+        for(k in 1:niters)
         {
-          nn=paste0(spi,k,'_year_',SS.file.years[x])
-          if(!file.exists(paste0(sp_path_scen,'/Stock_Synthesis/',nn,'/Report.sso')))
+          for(x in length(SS.file.years))
           {
-            nn_minus1=paste0(spi,k,'_year_',SS.file.years[1]) #get par.ss from 1st assessment
-            fn.re.run.SS(WD=paste0(sp_path_scen,'/Stock_Synthesis/',nn),
-                         prev.ass=paste0(sp_path_scen,'/Stock_Synthesis/',nn_minus1))
-            
+            nn=paste0(spi,k,'_year_',SS.file.years[x])
+            if(!file.exists(paste0(sp_path_scen,'/Stock_Synthesis/',nn,'/Report.sso')))
+            {
+              nn_minus1=paste0(spi,k,'_year_',SS.file.years[1]) #get par.ss from 1st assessment
+              fn.re.run.SS(WD=paste0(sp_path_scen,'/Stock_Synthesis/',nn),
+                           prev.ass=paste0(sp_path_scen,'/Stock_Synthesis/',nn_minus1))
+              
+            }
           }
         }
       }
+
       
     } #end s
   } #end i
@@ -747,7 +755,7 @@ if(run.RatPack)
                    'Recruits','AssessFail','estSSB0','estSSBcurrent','estDepletion',
                    'RawRBC','RBCPostPGMSY','RBC','TACdisc','TACpost','TAC',
                    'RawTotalCatch','TotCatch','TotDiscard','mainCPUE')
-  SS.file.years=c(assessment.year,Proj.assessment.years)
+  SS.file.years=as.numeric(unique(word(list.files(paste0(out.path.RatPack,'/Whiskery shark/S1/Stock_Synthesis')), 2, sep="year_")))
   last.yr.EM=SS.file.years[length(SS.file.years)]
   
   output_dis.pi.list=fn.create.list(Keep.species)
@@ -776,6 +784,29 @@ if(run.RatPack)
       #Get RatPack results
       xx=fn.get.RatPack.results(spi, PATH=sp_path_scen, last_yr=last.yr.EM)
       
+      # Compare OM and EM
+      #SSB
+      OMSSBquant=fn.percentiles(d=xx$d,grouping='Year',var='SSBcurrent')
+      EMSSBquant=fn.percentiles(d=xx$EMOut %>%
+                                  filter(RBCyear%in%SS.file.years) %>%
+                                  group_by(RBCyear) %>%
+                                  pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
+                                               names_to="Year", values_to="estSSB", names_prefix="X"),
+                                grouping=c('RBCyear','Year'),
+                                var='estSSB')%>%
+        mutate(Year =as.numeric(Year),
+               RBCyear = factor(RBCyear, level=sort(unique(RBCyear))))%>%
+        rename(Assessment=RBCyear)
+      OMSSBquant%>%
+        ggplot(aes(x=Year)) +
+        geom_ribbon(aes(ymin=per_5, ymax=per_95), fill="gray", alpha=0.50) +
+        geom_point(aes(y=middle),size=.8) +
+        labs(y="SSB") +
+        geom_line(data=EMSSBquant, aes(y=middle, color=Assessment, linetype=Assessment)) +
+        geom_ribbon(data=EMSSBquant,aes(ymin=per_5, ymax=per_95, fill=Assessment), alpha=0.20) +
+        expand_limits(y=0)
+      ggsave(paste0(outs.path,'/OM vs EM/Debug/SSB_',out.exten,'_',Keep.species[i],'_',Scenarios$Scenario[s],'.tiff'),
+             width = 6,height = 6,compression = "lzw")
  
       #Get Kobe and time series from EM Report file
       Store.Kobe=fn.create.list(1:niters)
@@ -783,8 +814,9 @@ if(run.RatPack)
       spi=paste0(str_remove(Keep.species[i],' shark'),'_sim_')
       for(k in 1:niters)
       {
-        nn=paste0(spi,k,'_year_',SS.file.years[1]) #last.yr.EM
+        nn=paste0(spi,k,'_year_',last.yr.EM) 
         Report=SS_output(paste0(sp_path_scen,'/Stock_Synthesis/',nn),covar=F,forecast=F,readwt=F)
+        if(do.SS.plots) SS_plots(Report, plot=c(1:6,8:26), png=T)
         Store.Kobe[[k]]=Report$Kobe%>%mutate(Iteration=k)
         Perf.ind_EM[[k]]=Report$derived_quants%>%
                           filter(grepl(paste(c('SSB','Recr','Bratio'),collapse='|'),Label))%>%
@@ -856,7 +888,7 @@ if(run.RatPack)
                iteration=Sim,
                Catch=TotCatch)%>%
         filter(!is.na(Catch))%>%
-        filter(year>Proj.assessment.years[length(Proj.assessment.years)-1])
+        filter(year>assessment.year)
       iter=sort(unique(katch$iteration))
       Tot.ktch=fn.create.list(iter)
       AAV.ktch=Tot.ktch
@@ -889,22 +921,22 @@ if(run.RatPack)
                   mutate(scenario=Scenarios$Scenario[s],
                          Period=ifelse(Period=='Hist','OM',ifelse(Period=='Sim','EM',NA)),
                          dumi=ifelse(Period=='OM','',last.yr.EM),
-                         model_run=paste(Period,dumi,sep='_'),
-                         SSBcurrent=ifelse(Period=='EM',estSSBcurrent,SSBcurrent),
-                         Depletion=ifelse(Period=='EM',estDepletion,Depletion))%>%
+                         model_run=paste(Period,dumi,sep='_'))%>%
                   dplyr::select(c(model_run,AssessFail,iteration,scenario,year,
-                                  any_of(Perf.ind),dumi))%>%
+                                  any_of(dis.perf.in),dumi))%>%   
                   left_join(Kobe,by=c("year","iteration"))
-      if(replace.OM.with.EM)
+      if(replace.1_out.with.SS)
       {
         perf.indic.timeseries=perf.indic.timeseries%>%
-                        dplyr::select(-c(SSB,Depletion,Recruits))%>%
+                        dplyr::select(-c(SSB,Depletion))%>%
+                        mutate(model_run=perf.indic.timeseries$model_run[nrow(perf.indic.timeseries)])%>%  
                         left_join(Perf.ind_EM%>%rename(year=Year), by=c('iteration','year'))
       }
       
       
       #Store in list
       Store[[s]]=list(d=xx$d,
+                      EMOut=xx$EMOut,
                       perf.ind.values=perf.ind.values,
                       perf.indic.timeseries=perf.indic.timeseries,
                       d_rel_err=xx$d_rel_err,
@@ -1031,7 +1063,7 @@ if(run.RatPack)
     rm(Per.ind.scaled, dumi)
     
     
-    #Compare some OM and EM random iterations
+    #Compare some OM and EM random iterations  
     dumi=fn.create.list(Scenarios$Scenario)
     for(q in 1:length(dumi)) dumi[[q]]= outputs_RatPack[[i]][[q]]$d
     dumi=do.call(rbind,dumi)
@@ -1043,7 +1075,7 @@ if(run.RatPack)
                             OM.var='SSBcurrent',
                             EM.var='estSSBcurrent',
                             YLAB="SSB (t)")
-    ggsave(paste0(outs.path,'/OM vs EM/Random_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
+    ggsave(paste0(outs.path,'/OM vs EM/results_1.out/Random_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
            width = 6,height = 6,compression = "lzw")
       #Depletion
     fn.compare.OM.EM.random(d_3_sims=dumi%>%
@@ -1052,7 +1084,7 @@ if(run.RatPack)
                             OM.var='Depletion',
                             EM.var='estDepletion',
                             YLAB="Depletion")
-    ggsave(paste0(outs.path,'/OM vs EM/Random_Depletion_',out.exten,'_',Keep.species[i],'.tiff'),
+    ggsave(paste0(outs.path,'/OM vs EM/results_1.out/Random_Depletion_',out.exten,'_',Keep.species[i],'.tiff'),
            width = 6,height = 6,compression = "lzw")
     
     
@@ -1068,7 +1100,7 @@ if(run.RatPack)
                               drop_na()%>%
                               mutate(Analysis = "Estimation Model"),
                             YLAB="SSB (t)")
-    ggsave(paste0(outs.path,'/OM vs EM/Trend_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
+    ggsave(paste0(outs.path,'/OM vs EM/results_1.out/Trend_SSB_',out.exten,'_',Keep.species[i],'.tiff'),
            width = 6,height = 6,compression = "lzw")
     
       #Depletion
@@ -1082,7 +1114,7 @@ if(run.RatPack)
                               drop_na()%>%
                               mutate(Analysis = "Estimation Model"),
                             YLAB="Depletion")
-    ggsave(paste0(outs.path,'/OM vs EM/Trend_depletion_',out.exten,'_',Keep.species[i],'.tiff'),
+    ggsave(paste0(outs.path,'/OM vs EM/results_1.out/Trend_depletion_',out.exten,'_',Keep.species[i],'.tiff'),
            width = 6,height = 6,compression = "lzw")
     
     

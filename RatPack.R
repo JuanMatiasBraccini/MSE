@@ -2,6 +2,7 @@ library(r4ss)
 library(tictoc)
 library(tidyverse)
 library(labeling)
+library(stringr)
 #library(Hmisc)  stuffs up group_by
 
 Usr=Sys.getenv("USERNAME")
@@ -47,8 +48,9 @@ fn.percentiles=function(d,grouping,var)
                      ymax=quantile(!!as.name(var), probs=0.9, na.rm=TRUE)))
 }
 OMSSBquant=fn.percentiles(d=OMOut,grouping='Year',var='SSBcurrent')
+dis.yrs=as.numeric(unique(word(list.files(handl_OneDrive(paste0(hndl,'Stock_Synthesis'))), 2, sep="year_")))
 EMSSBquant=fn.percentiles(d=EMOut %>%
-                            filter(RBCyear%in%c(2022,2032,max(OMOut$Year))) %>%
+                            filter(RBCyear%in%dis.yrs) %>%
                             group_by(RBCyear) %>%
                             pivot_longer(cols=colnames(EMOut[3:ncol(EMOut)]),
                                          names_to="Year", values_to="estSSB", names_prefix="X"),
